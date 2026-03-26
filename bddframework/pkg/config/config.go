@@ -109,12 +109,12 @@ const (
 	defaultOperatorProfilingDataAccessYamlURI = "../profiling/kogito-operator-profiling-data-access.yaml"
 	defaultOperatorProfilingOutputFileURI     = "./bdd-cover.out"
 
-	defaultKogitoExamplesURI = "https://github.com/apache/incubator-kie-kogito-examples"
+	defaultKogitoExamplesURI = "https://github.com/kiegroup/kogito-examples"
 
 	defaultLoadFactor      = 1
 	defaultHTTPRetryNumber = 3
 
-	defaultContainerEngine = "podman"
+	defaultContainerEngine = "docker"
 
 	installationSourceOlm  = "olm"
 	installationSourceYaml = "yaml"

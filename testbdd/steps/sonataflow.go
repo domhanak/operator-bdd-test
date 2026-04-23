@@ -46,6 +46,7 @@ func registerSonataFlowSteps(ctx *godog.ScenarioContext, data *Data) {
 	ctx.Step(`^HTTP POST request as Cloud Event on SonataFlow "([^"]*)" is successful within (\d+) minutes? with path "([^"]*)", headers "([^"]*)" and body:$`, data.httpPostRequestAsCloudEventOnSonataFlowIsSuccessfulWithinMinutesWithPathHeadersAndBody)
 	ctx.Step(`^HTTP GET request on SonataFlow "([^"]*)" is successful within (\d+) minutes? with path "([^"]*)", expectedResponseContains '([^']*)'$`, data.httpGetRequestOnSonataFlowIsSuccessfulWithinMinutesWithResponseContains)
 	ctx.Step(`^HTTP POST request on SonataFlow "([^"]*)" is successful within (\d+) minutes? with path "([^"]*)", expectedResponseContains '([^']*)' and body:$`, data.httpPostRequestOnSonataFlowIsSuccessfulWithinMinutesWithResponseAndBody)
+	ctx.Step(`^HTTP POST request on non-dev SonataFlow "([^"]*)" is successful within (\d+) minutes? with path "([^"]*)", expectedResponseContains '([^']*)' and body:$`, data.httpPostRequestWithinPodOnSonataFlowIsSuccessfulWithinMinutesWithResponseAndBody)
 	ctx.Step(`^SonataFlow "([^"]*)" pods log contains text '([^']*)' within (\d+) minutes$`, data.sonataFlowLogContainsTextWithinMinutes)
 	ctx.Step(`^SonataFlow "([^"]*)" pods log does not contain text '([^']*)' within (\d+) minutes$`, data.sonataFlowLogDoesNotContainTextWithinMinutes)
 }
@@ -132,8 +133,16 @@ func (data *Data) sonataFlowIsAddressableWithinMinutes(name string, timeoutInMin
 				return false, fmt.Errorf("no SonataFlow found with name %s in namespace %s", name, data.Namespace)
 			}
 
+			if sonataFlow.ObjectMeta.Annotations["sonataflow.org/profile"] == "gitops" {
+				return false, fmt.Errorf("SonataFlow %s does NOT have an address, because it uses gitops profile", name)
+			}
+
+			if sonataFlow.ObjectMeta.Annotations["sonataflow.org/profile"] == "preview" {
+				return false, fmt.Errorf("SonataFlow %s does NOT have an address, because it uses preview profile", name)
+			}
+
 			if sonataFlow.Status.Address.URL == nil {
-				return false, fmt.Errorf("SonataFlow %s does NOT have an address", name)
+				return false, fmt.Errorf("SonataFlow %s does NOT have an address.", name)
 			}
 
 			if _, err := url.ParseRequestURI(sonataFlow.Status.Address.URL.String()); err != nil {
@@ -249,6 +258,27 @@ func (data *Data) httpPostRequestOnSonataFlowIsSuccessfulWithinMinutesWithRespon
 	}
 }
 
+func (data *Data) httpPostRequestWithinPodOnSonataFlowIsSuccessfulWithinMinutesWithResponseAndBody(name string, timeoutInMin int, path, expectedResponseContains string, body *godog.DocString) error {
+	podName, err := getWorkflowPodName(data.Namespace, name)
+	if err != nil {
+		return err
+	}
+
+	framework.GetLogger(data.Namespace).Info("Executing POST request inside pod", "pod", podName, "path", path)
+
+	// 2. Execute the curl command
+	output, err := executePostInPod(data.Namespace, podName, path, body.Content)
+	if err != nil {
+		return err
+	}
+	framework.GetLogger(data.Namespace).Info("POST request successful", "response", output)
+
+	// Note: If you have subsequent steps that need to validate the response,
+	// you can store 'output' in your 'Data' struct! (e.g., data.LastHttpResponse = output)
+
+	return nil
+}
+
 func parseHeaders(headersContent string) (map[string]string, error) {
 	headers := make(map[string]string)
 
@@ -266,4 +296,50 @@ func parseHeaders(headersContent string) (map[string]string, error) {
 	}
 
 	return headers, nil
+}
+
+// Helper: Get the running pod name for a specific workflow
+func getWorkflowPodName(namespace, workflowName string) (string, error) {
+	// SonataFlow workflows generate Deployments with the same name as the workflow
+	pods, err := framework.GetPodsByDeployment(namespace, workflowName)
+	if err != nil {
+		return "", fmt.Errorf("error fetching pods for deployment %s: %v", workflowName, err)
+	}
+
+	if len(pods) == 0 {
+		return "", fmt.Errorf("no pods found for workflow deployment %s", workflowName)
+	}
+
+	// Iterate through the list and return the first pod that is actively running
+	for _, pod := range pods {
+		if framework.IsPodRunning(&pod) {
+			return pod.Name, nil
+		}
+	}
+
+	return "", fmt.Errorf("no running pods found for workflow %s", workflowName)
+}
+
+// Helper: Execute the curl command inside the pod
+func executePostInPod(namespace, podName, path, jsonData string) (string, error) {
+	cli := "kubectl"
+	if framework.IsOpenshift() {
+		cli = "oc"
+	}
+
+	cmd := framework.CreateCommand(
+		cli, "exec", podName, "-n", namespace, "--",
+		"curl", "-s", "-X", "POST",
+		"-H", "Content-Type: application/json",
+		"-d", jsonData,
+		fmt.Sprintf("http://localhost:8080/%s", path),
+	)
+
+	// Execute returns the standard output (your HTTP response body)
+	output, err := cmd.Execute()
+	if err != nil {
+		return "", fmt.Errorf("failed to execute curl in pod: %v. Output: %s", err, output)
+	}
+
+	return output, nil
 }

@@ -32,6 +32,7 @@ import (
 // Data contains all data needed by Gherkin steps to run
 type Data struct {
 	*sonataFlowSteps.Data
+	OperatorNamespace string
 }
 
 // RegisterAllSteps register all steps available to the test suite

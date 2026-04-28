@@ -25,6 +25,9 @@ metadata:
     sonataflow.org/expressionLang: jsonpath
     sonataflow.org/profile: gitops
 spec:
+  podTemplate:
+    container:
+      image: quay.io/dhanak/greeting:1.38.0
   flow:
     start: ChooseOnLanguage
     functions:

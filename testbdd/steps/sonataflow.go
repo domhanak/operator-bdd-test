@@ -40,13 +40,17 @@ func registerSonataFlowSteps(ctx *godog.ScenarioContext, data *Data) {
 	ctx.Step(`^SonataFlow orderprocessing example is deployed$`, data.sonataFlowOrderProcessingExampleIsDeployed)
 	ctx.Step(`^SonataFlow callbackstatetimeouts example is deployed$`, data.sonataFlowCallbackstateTimeoutsIsDeployed)
 	ctx.Step(`^SonataFlow greeting example is deployed$`, data.sonataFlowGreetingExampleIsDeployed)
+	ctx.Step(`^SonataFlow greeting gitops example is deployed`, data.sonataFlowGreetingGitOpsExampleIsDeployed)
 	ctx.Step(`^SonataFlow vet example is deployed$`, data.sonataFlowVetExampleIsDeployed)
+
 	ctx.Step(`^SonataFlow "([^"]*)" has the condition "(Running|Succeed|Built)" set to "(True|False|Unknown)" within (\d+) minutes?$`, data.sonataFlowHasTheConditionSetToWithinMinutes)
 	ctx.Step(`^SonataFlow "([^"]*)" is addressable within (\d+) minutes?$`, data.sonataFlowIsAddressableWithinMinutes)
+
 	ctx.Step(`^HTTP POST request as Cloud Event on SonataFlow "([^"]*)" is successful within (\d+) minutes? with path "([^"]*)", headers "([^"]*)" and body:$`, data.httpPostRequestAsCloudEventOnSonataFlowIsSuccessfulWithinMinutesWithPathHeadersAndBody)
 	ctx.Step(`^HTTP GET request on SonataFlow "([^"]*)" is successful within (\d+) minutes? with path "([^"]*)", expectedResponseContains '([^']*)'$`, data.httpGetRequestOnSonataFlowIsSuccessfulWithinMinutesWithResponseContains)
 	ctx.Step(`^HTTP POST request on SonataFlow "([^"]*)" is successful within (\d+) minutes? with path "([^"]*)", expectedResponseContains '([^']*)' and body:$`, data.httpPostRequestOnSonataFlowIsSuccessfulWithinMinutesWithResponseAndBody)
 	ctx.Step(`^HTTP POST request on non-dev SonataFlow "([^"]*)" is successful within (\d+) minutes? with path "([^"]*)", expectedResponseContains '([^']*)' and body:$`, data.httpPostRequestWithinPodOnSonataFlowIsSuccessfulWithinMinutesWithResponseAndBody)
+
 	ctx.Step(`^SonataFlow "([^"]*)" pods log contains text '([^']*)' within (\d+) minutes$`, data.sonataFlowLogContainsTextWithinMinutes)
 	ctx.Step(`^SonataFlow "([^"]*)" pods log does not contain text '([^']*)' within (\d+) minutes$`, data.sonataFlowLogDoesNotContainTextWithinMinutes)
 }
@@ -102,6 +106,20 @@ func (data *Data) sonataFlowGreetingExampleIsDeployed() error {
 	// TODO or kubectl
 	out, err := framework.CreateCommand("oc", "apply", "-f", filepath.Join(projectDir,
 		test.GetSonataFlowE2eGreetingFolder()), "-n", data.Namespace).Execute()
+
+	if err != nil {
+		framework.GetLogger(data.Namespace).Error(err, fmt.Sprintf("Applying SonataFlow failed, output: %s", out))
+	}
+	return err
+}
+
+func (data *Data) sonataFlowGreetingGitOpsExampleIsDeployed() error {
+	projectDir, _ := utils.GetProjectDir()
+	projectDir = strings.Replace(projectDir, "/testbdd", "", -1)
+
+	// TODO or kubectl
+	out, err := framework.CreateCommand("oc", "apply", "-f", filepath.Join(projectDir,
+		test.GetSonataFlowE2eGreetingFolder()+"/gitops"), "-n", data.Namespace).Execute()
 
 	if err != nil {
 		framework.GetLogger(data.Namespace).Error(err, fmt.Sprintf("Applying SonataFlow failed, output: %s", out))

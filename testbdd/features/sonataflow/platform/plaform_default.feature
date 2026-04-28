@@ -1,4 +1,7 @@
 Feature: Deploy SonataFlowPlatform with default configuration
+  As a developer
+  I want to deploy examples with default platform
+  So that I can verify the examples deployed on top of this platform behave expectedly
 
   Background:
     Given Namespace is created
@@ -52,3 +55,14 @@ Feature: Deploy SonataFlowPlatform with default configuration
     Then SonataFlow "greeting" pods log contains text 'Saludos desde JSON Workflow' within 1 minutes
     Then SonataFlow "greeting" pods log contains text 'End' within 1 minutes
     Then SonataFlow "greeting" pods log does not contain text 'ERROR' within 0 minutes
+
+  @gitOpsMode
+  Scenario: Deploy greeting example in gitops mode and verify its functionality  
+    When SonataFlow greeting gitops example is deployed
+    Then SonataFlow "greeting" has the condition "Running" set to "True" within 5 minutes
+    Then HTTP POST request on non-dev SonataFlow "greeting" is successful within 1 minute with path "greeting", expectedResponseContains '""workflowdata":{"name":"Petr Pavel","language":"Spanish","greeting":"Saludos desde JSON Workflow, "}' and body:
+    """json
+    {"name":"Petr Pavel",
+    "language":"Spanish"
+    }
+    """

@@ -1,4 +1,7 @@
 Feature: Deploy SonataFlowPlatform with Data Index and JobService using Postgres database
+  As a developer
+  I want to deploy examples with DataIndex and JobsService using Postgresql
+  So that I can verify the examples deployed on top of this platform behave expectedly
 
   Background:
     Given Namespace is created
@@ -30,7 +33,7 @@ Feature: Deploy SonataFlowPlatform with Data Index and JobService using Postgres
     Then SonataFlow "order-processing" pods log does not contain text 'ERROR' within 0 minutes
 
   @devMode
-  Scenario: Deploy greeting-example in dev mode and verify its functionality
+  Scenario: Deploy greeting example in dev mode and verify its functionality
     When SonataFlow greeting example is deployed
     Then SonataFlow "greeting" has the condition "Running" set to "True" within 5 minutes
     Then SonataFlow "greeting" is addressable within 1 minute
@@ -58,8 +61,19 @@ Feature: Deploy SonataFlowPlatform with Data Index and JobService using Postgres
   Scenario: Deploy callbackstatetimeouts example in preview mode and verify its functionality
     When SonataFlow callbackstatetimeouts example is deployed
     Then SonataFlow "callbackstatetimeouts" has the condition "Running" set to "True" within 5 minutes
-  
-  Scenario: Deploy vet example in preview mode and verify its functionality
-    When SonataFlow vet example is deployed
-    Then SonataFlow "vet" has the condition "Running" set to "True" within 2 minutes
+    Then HTTP POST request on non-dev SonataFlow "callbackstatetimeouts" is successful within 1 minute with path "callbackstatetimeouts", expectedResponseContains '"workflowdata":{"message":"Hello"}"' and body:
+    """json
+    {"message": "Hello"
+    }
+    """
    
+  @gitOpsMode
+  Scenario: Deploy greeting example in gitops mode and verify its functionality  
+    When SonataFlow greeting gitops example is deployed
+    Then SonataFlow "greeting" has the condition "Running" set to "True" within 5 minutes
+    Then HTTP POST request on non-dev SonataFlow "greeting" is successful within 1 minute with path "greeting", expectedResponseContains '""workflowdata":{"name":"Petr Pavel","language":"Spanish","greeting":"Saludos desde JSON Workflow, "}' and body:
+    """json
+    {"name":"Petr Pavel",
+    "language":"Spanish"
+    }
+    """

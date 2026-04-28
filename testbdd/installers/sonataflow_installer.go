@@ -78,7 +78,7 @@ var (
 	sonataFlowOperatorBuilderConfigName                   = sonataFlowOperatorSubscriptionName + "-builder-config"
 	sonataFlowOperatorControllerManagerServiceAccountName = sonataFlowOperatorSubscriptionName + "-controller-manager"
 	sonataFlowOperatorMetricsReaderName                   = sonataFlowOperatorSubscriptionName + "-metrics-reader"
-	sonataFlowOperatorLeaderElectionRoleName 			  = sonataFlowOperatorSubscriptionName + "-leader-election-role"
+	sonataFlowOperatorLeaderElectionRoleName              = sonataFlowOperatorSubscriptionName + "-leader-election-role"
 	sonataFlowOperatorBuilderManagerRoleName              = sonataFlowOperatorSubscriptionName + "-builder-manager-role"
 
 	// Openshift Serverless Logic naming constants
@@ -89,7 +89,7 @@ var (
 	logicOperatorBuilderConfigName                   = logicOperatorSubscriptionName + "-builder-config"
 	logicOperatorControllerManagerServiceAccountName = logicOperatorSubscriptionName + "-controller-manager"
 	logicOperatorMetricsReaderName                   = logicOperatorSubscriptionName + "-metrics-reader"
-	logicOperatorLeaderElectionRoleName 			 = logicOperatorSubscriptionName + "-leader-election-role"
+	logicOperatorLeaderElectionRoleName              = logicOperatorSubscriptionName + "-leader-election-role"
 	logicOperatorBuilderManagerRoleName              = logicOperatorSubscriptionName + "-builder-manager-role"
 )
 
@@ -169,21 +169,6 @@ func installSonataFlowUsingYaml() error {
 	// Replace remaining community prefixes
 	yamlContent = strings.ReplaceAll(yamlContent, "sonataflow-operator-", "logic-operator-")
 
-	/**
-	// Replace sonataflow-operator-controllers-config with logic-operator-controllers-config
-	yamlContent = strings.ReplaceAll(yamlContent, sonataFlowOperatorControllerConfigName, logicOperatorControllerConfigName)
-	// Replace sonataflow-operator-builder-config with logic-operator-builder-config
-	yamlContent = strings.ReplaceAll(yamlContent, sonataFlowOperatorBuilderConfigName, logicOperatorBuilderConfigName)
-	// Replace sonataflow-operator-controller-manager with logic-operator-controller-manager
-	yamlContent = strings.ReplaceAll(yamlContent, sonataFlowOperatorControllerManagerServiceAccountName,
-		logicOperatorControllerManagerServiceAccountName)
-	// Replace sonataflow-operator-metrics-reader with logic-operator-metrics-reader
-	yamlContent = strings.ReplaceAll(yamlContent, sonataFlowOperatorMetricsReaderName, logicOperatorMetricsReaderName)
-	// Replace sonataflow-operator-leader-election-role with logic-operator-leader-election-role
-	yamlContent = strings.ReplaceAll(yamlContent, sonataFlowOperatorLeaderElectionRoleName, logicOperatorLeaderElectionRoleName)
-	// Replace sonataflow-operator-builder-manager-role with logic-operator-builder-manager-role
-	yamlContent = strings.ReplaceAll(yamlContent, sonataFlowOperatorBuilderManagerRoleName, logicOperatorBuilderManagerRoleName)
-*/
 	// Create also one file to be able to inspect the YAML if needed
 	framework.CreateFile("./logs/", "operator.yaml", yamlContent)
 	tempFilePath, err := framework.CreateTemporaryFile("logic-operator*.yaml", yamlContent)

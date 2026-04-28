@@ -185,7 +185,7 @@ func installSonataFlowUsingYaml() error {
 	yamlContent = strings.ReplaceAll(yamlContent, sonataFlowOperatorBuilderManagerRoleName, logicOperatorBuilderManagerRoleName)
 */
 	// Create also one file to be able to inspect the YAML if needed
-	framework.CreateFile("./", "operator.yaml", yamlContent)
+	framework.CreateFile("./logs/", "operator.yaml", yamlContent)
 	tempFilePath, err := framework.CreateTemporaryFile("logic-operator*.yaml", yamlContent)
 	if err != nil {
 		framework.GetMainLogger().Error(err, "Error while storing adjusted YAML content to temporary file")

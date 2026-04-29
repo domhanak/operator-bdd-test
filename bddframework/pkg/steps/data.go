@@ -183,6 +183,9 @@ func handleScenarioResult(data *Data, scenario *messages.Pickle, err error) {
 	} else {
 		parentLogFolder = "success"
 		framework.GetLogger(data.Namespace).Info("Successful scenario", "scenarioName", scenario.Name)
+		fmt.Println("")
+		framework.GetLogger(data.Namespace).Info("--------------------END OF SCENARIO---------------")
+		fmt.Println("")
 	}
 	err = framework.RenameLogFolder(data.Namespace, parentLogFolder, newLogFolderName)
 	if err != nil {

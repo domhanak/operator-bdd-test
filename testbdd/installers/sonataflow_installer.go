@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -32,13 +33,13 @@ import (
 	srvframework "github.com/kubesmarts/operator-bdd-test/testbdd/framework"
 )
 
-const defaultOperatorImage = "quay.io/kubesmarts/incubator-kie-sonataflow-operator"
+const defaultOperatorImage = "registry-proxy.engineering.redhat.com/rh-osbs/openshift-serverless-1-logic-rhel9-operator:latest"
 
 var (
 	// sonataFlowYamlClusterInstaller installs SonataFlow operator cluster wide using YAMLs
 	sonataFlowYamlClusterInstaller = installers.YamlClusterWideServiceInstaller{
 		InstallClusterYaml:               installSonataFlowUsingYaml,
-		InstallationNamespace:            SonataFlowNamespace,
+		InstallationNamespace:            LogicOperatorNamespace,
 		WaitForClusterYamlServiceRunning: waitForSonataFlowOperatorUsingYamlRunning,
 		GetAllClusterYamlCrsInNamespace:  getSonataFlowCrsInNamespace,
 		UninstallClusterYaml:             uninstallSonataFlowUsingYaml,
@@ -71,7 +72,25 @@ var (
 	sonataFlowServiceName = "SonataFlow operator"
 
 	sonataFlowOperatorSubscriptionName    = "sonataflow-operator"
-	sonataFlowOperatorSubscriptionChannel = "alpha"
+	sonataFlowOperatorSubscriptionChannel = "stable"
+
+	sonataFlowOperatorControllerConfigName                = sonataFlowOperatorSubscriptionName + "-controllers-config"
+	sonataFlowOperatorBuilderConfigName                   = sonataFlowOperatorSubscriptionName + "-builder-config"
+	sonataFlowOperatorControllerManagerServiceAccountName = sonataFlowOperatorSubscriptionName + "-controller-manager"
+	sonataFlowOperatorMetricsReaderName                   = sonataFlowOperatorSubscriptionName + "-metrics-reader"
+	sonataFlowOperatorLeaderElectionRoleName              = sonataFlowOperatorSubscriptionName + "-leader-election-role"
+	sonataFlowOperatorBuilderManagerRoleName              = sonataFlowOperatorSubscriptionName + "-builder-manager-role"
+
+	// Openshift Serverless Logic naming constants
+	LogicOperatorNamespace        = "openshift-serverless-logic"
+	logicOperatorSubscriptionName = "logic-operator"
+
+	logicOperatorControllerConfigName                = logicOperatorSubscriptionName + "-controllers-config"
+	logicOperatorBuilderConfigName                   = logicOperatorSubscriptionName + "-builder-config"
+	logicOperatorControllerManagerServiceAccountName = logicOperatorSubscriptionName + "-controller-manager"
+	logicOperatorMetricsReaderName                   = logicOperatorSubscriptionName + "-metrics-reader"
+	logicOperatorLeaderElectionRoleName              = logicOperatorSubscriptionName + "-leader-election-role"
+	logicOperatorBuilderManagerRoleName              = logicOperatorSubscriptionName + "-builder-manager-role"
 )
 
 // GetSonataFlowInstaller returns SonataFlow installer
@@ -96,24 +115,69 @@ func GetSonataFlowInstaller() (installers.ServiceInstaller, error) {
 func installSonataFlowUsingYaml() error {
 	framework.GetMainLogger().Info("Installing SonataFlow operator")
 
-	yamlContent, err := framework.ReadFromURI(config.GetOperatorYamlURI())
+	operatorImage := config.GetOperatorImageTag()
+	manifestURI := config.GetOperatorYamlURI()
+
+	// Read the content of operator.yaml from configured URL
+	yamlContent, err := framework.ReadFromURI(manifestURI)
 	if err != nil {
-		framework.GetMainLogger().Error(err, "Error while reading the operator YAML file")
+		framework.GetMainLogger().Error(err, "Error while reading the operator YAML file at %s", manifestURI)
 		return err
 	}
 
-	regexp, err := regexp.Compile("main")
-	if err != nil {
-		return err
+	// Patch the image reference of operator
+	if len(operatorImage) > 0 {
+		imageRegex := regexp.MustCompile(`image:\s*["']?.*?incubator-kie-sonataflow-operator[^"'\s]*["']?`)
+		if !imageRegex.MatchString(yamlContent) {
+			// Fallback: search for a generic placeholder if the specific one isn't found
+			imageRegex = regexp.MustCompile(`image:\s*["']?placeholder["']?|image:\s*["']?main["']?`)
+		}
+		yamlContent = imageRegex.ReplaceAllString(yamlContent, fmt.Sprintf("image: %s", operatorImage))
 	}
-	yamlContent = regexp.ReplaceAllString(yamlContent, config.GetOperatorImageTag())
 
-	tempFilePath, err := framework.CreateTemporaryFile("kogito-serverless-operator*.yaml", yamlContent)
+	// 2. Patch Related Images Environment Variables
+	relatedImageVars := []string{
+		"RELATED_IMAGE_JOBS_SERVICE_POSTGRESQL",
+		"RELATED_IMAGE_JOBS_SERVICE_EPHEMERAL",
+		"RELATED_IMAGE_DATA_INDEX_POSTGRESQL",
+		"RELATED_IMAGE_DATA_INDEX_EPHEMERAL",
+		"RELATED_IMAGE_DB_MIGRATOR_TOOL",
+		"RELATED_IMAGE_BASE_BUILDER",
+		"RELATED_IMAGE_DEVMODE",
+	}
+
+	for _, envVar := range relatedImageVars {
+		overrideValue := config.GetRelatedImage(envVar)
+		if len(overrideValue) > 0 {
+			// (?s) allows the regex to read across newlines.
+			// It finds "name: <VAR>" and the subsequent "value: " string, keeping them intact (${1})
+			// and replaces the actual image tag.
+			re := regexp.MustCompile(`(?s)(name:\s*` + envVar + `\s+value:\s*)([^\s"']+)`)
+			yamlContent = re.ReplaceAllString(yamlContent, "${1}"+overrideValue)
+
+			framework.GetMainLogger().Info(fmt.Sprintf("Patched %s with %s", envVar, overrideValue))
+		}
+	}
+
+	// Replace builder image reference in sonataflow-operator-builder-config
+	builderImageUrl := config.GetRelatedImage("RELATED_IMAGE_BASE_BUILDER")
+	builderRegex := regexp.MustCompile(`docker\.io/apache/incubator-kie-sonataflow-builder[^\s"']*`)
+	yamlContent = builderRegex.ReplaceAllString(yamlContent, builderImageUrl)
+
+	// Replace sonataflow-operator-system with openshift-serverless-logic
+	yamlContent = strings.ReplaceAll(yamlContent, SonataFlowNamespace, LogicOperatorNamespace)
+	// Replace remaining community prefixes
+	yamlContent = strings.ReplaceAll(yamlContent, "sonataflow-operator-", "logic-operator-")
+
+	// Create also one file to be able to inspect the YAML if needed
+	framework.CreateFile("./logs/", "operator.yaml", yamlContent)
+	tempFilePath, err := framework.CreateTemporaryFile("logic-operator*.yaml", yamlContent)
 	if err != nil {
 		framework.GetMainLogger().Error(err, "Error while storing adjusted YAML content to temporary file")
 		return err
 	}
 
+	// TODO: Make this differentiate between different CLIs
 	_, err = framework.CreateCommand("oc", "create", "-f", tempFilePath).Execute()
 	if err != nil {
 		framework.GetMainLogger().Error(err, "Error while installing SonataFlow operator from YAML file")
@@ -124,15 +188,15 @@ func installSonataFlowUsingYaml() error {
 }
 
 func waitForSonataFlowOperatorUsingYamlRunning() error {
-	return srvframework.WaitForSonataFlowOperatorRunning(SonataFlowNamespace)
+	return srvframework.WaitForSonataFlowOperatorRunning(LogicOperatorNamespace)
 }
 
 func uninstallSonataFlowUsingYaml() error {
 	framework.GetMainLogger().Info("Uninstalling SonataFlow operator")
 
-	output, err := framework.CreateCommand("oc", "delete", "-f", config.GetOperatorYamlURI(), "--timeout=30s", "--ignore-not-found=true").Execute()
+	output, err := framework.CreateCommand("oc", "delete", "-f", "./operator.yaml", "--timeout=60s", "--ignore-not-found=true").Execute()
 	if err != nil {
-		framework.GetMainLogger().Error(err, fmt.Sprintf("Deleting SonataFlow operator failed, output: %s", output))
+		framework.GetMainLogger().Error(err, fmt.Sprintf("Deleting SonataFlow operator failed, output:\n %s", output))
 		return err
 	}
 

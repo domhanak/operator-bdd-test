@@ -21,6 +21,7 @@ package steps
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/cucumber/godog"
 
@@ -29,11 +30,17 @@ import (
 	"github.com/kubesmarts/operator-bdd-test/bddframework/pkg/config"
 	"github.com/kubesmarts/operator-bdd-test/bddframework/pkg/framework"
 	kogitoInstallers "github.com/kubesmarts/operator-bdd-test/bddframework/pkg/installers"
+	corev1 "k8s.io/api/core/v1"
+
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func registerOperatorSteps(ctx *godog.ScenarioContext, data *Data) {
 	ctx.Step(`^SonataFlow Operator is deployed$`, data.sonataFlowOperatorIsDeployed)
-	ctx.Step(`^SonataFlow Operator has (\d+) (?:pod|pods) running"$`, data.sonataFlowOperatorHasPodsRunning)
+	ctx.Step(`^SonataFlow Operator has (\d+) (?:pod|pods) running$`, data.sonataFlowOperatorHasPodsRunning)
+	ctx.Step(`^Service "([^"]*)" exists$`, data.serviceExists)
+	ctx.Step(`^ConfigMap "([^"]*)" exists$`, data.configMapExists)
+	ctx.Step(`^ConfigMap "([^"]*)" contains following strings:$`, data.configMapContainsStrings)
 	// Not migrated yet
 	//ctx.Step(`^Kogito operator should be installed$`, data.kogitoOperatorShouldBeInstalled)
 	//ctx.Step(`^CLI install Kogito operator$`, data.cliInstallKogitoOperator)
@@ -41,6 +48,8 @@ func registerOperatorSteps(ctx *godog.ScenarioContext, data *Data) {
 
 func (data *Data) sonataFlowOperatorIsDeployed() (err error) {
 	var installer kogitoInstallers.ServiceInstaller
+	// Always use OSL namespace
+	data.OperatorNamespace = installers.LogicOperatorNamespace
 	if config.UseProductOperator() {
 		installer, err = &kogitoInstallers.YamlClusterWideServiceInstaller{}, fmt.Errorf("OLM is not supported by the steps yet")
 	} else {
@@ -49,11 +58,78 @@ func (data *Data) sonataFlowOperatorIsDeployed() (err error) {
 	if err != nil {
 		return err
 	}
-	return installer.Install(data.Namespace)
+	return installer.Install(data.OperatorNamespace)
 }
 
-func (data *Data) sonataFlowOperatorHasPodsRunning(numberOfPods int, name, phase string) error {
-	return framework.WaitForPodsWithLabel(name, "control-plane", "sonataflow-operator", numberOfPods, 1)
+func (data *Data) sonataFlowOperatorHasPodsRunning(numberOfPods int) error {
+	return framework.WaitForPodsWithLabel(data.OperatorNamespace, "app.kubernetes.io/name", "sonataflow-operator", numberOfPods, 1)
+}
+
+func (data *Data) serviceExists(serviceName string) error {
+	framework.GetLogger(data.OperatorNamespace).Info("Checking if Service exists", "service", serviceName)
+
+	_, err := framework.GetService(data.OperatorNamespace, serviceName)
+	if err != nil {
+		return fmt.Errorf("Service %s does not exist in namespace %s: %v", serviceName, data.OperatorNamespace, err)
+	}
+	return nil
+}
+
+func (data *Data) configMapExists(cmName string) error {
+	framework.GetLogger(data.OperatorNamespace).Info("Checking if ConfigMap exists", "configMap", cmName)
+
+	exists, err := framework.IsConfigMapExist(types.NamespacedName{Name: cmName, Namespace: data.OperatorNamespace})
+	if err != nil {
+		return fmt.Errorf("error while checking if ConfigMap %s exists: %v", cmName, err)
+	}
+	if !exists {
+		return fmt.Errorf("ConfigMap %s does not exist in namespace %s", cmName, data.OperatorNamespace)
+	}
+	return nil
+}
+
+func (data *Data) configMapContainsStrings(cmName string, table *godog.Table) error {
+	framework.GetLogger(data.OperatorNamespace).Info("Validating ConfigMap contains strings", "configMap", cmName)
+
+	cm := &corev1.ConfigMap{}
+	exists, err := framework.GetObjectWithKey(types.NamespacedName{Name: cmName, Namespace: data.OperatorNamespace}, cm)
+	if err != nil {
+		return fmt.Errorf("error fetching ConfigMap %s: %v", cmName, err)
+	}
+	if !exists {
+		return fmt.Errorf("ConfigMap %s does not exist in namespace %s", cmName, data.OperatorNamespace)
+	}
+
+	// Concatenate all ConfigMap values into one large string for easy searching
+	var allDataValues strings.Builder
+	for _, value := range cm.Data {
+		allDataValues.WriteString(value)
+	}
+
+	// Iterate over the Gherkin data table
+	for _, row := range table.Rows {
+		if len(row.Cells) == 0 {
+			continue
+		}
+
+		expectedString := row.Cells[0].Value
+
+		// Placeholder Resolution Logic - allows to check for string influenced by the stream
+		if strings.Contains(expectedString, "${RELATED_IMAGE_BASE_BUILDER}") {
+			builderImage := config.GetRelatedImage("RELATED_IMAGE_BASE_BUILDER")
+			if builderImage == "" {
+				// Fallback to the default if the property wasn't provided during the test run
+				builderImage = "docker.io/apache/incubator-kie-sonataflow-builder:main"
+			}
+			expectedString = strings.ReplaceAll(expectedString, "${RELATED_IMAGE_BASE_BUILDER}", builderImage)
+		}
+
+		if !strings.Contains(allDataValues.String(), expectedString) {
+			return fmt.Errorf("ConfigMap '%s' does not contain the expected string:\n'%s'", cmName, expectedString)
+		}
+	}
+
+	return nil
 }
 
 //

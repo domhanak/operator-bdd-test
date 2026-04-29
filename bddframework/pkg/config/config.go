@@ -22,6 +22,7 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	flag "github.com/spf13/pflag"
 )
@@ -45,6 +46,7 @@ type TestConfig struct {
 	operatorInstallationSource string
 	operatorCatalogImage       string
 	useProductOperator         bool
+	relatedImages map[string]string
 
 	// profiling
 	operatorProfiling                  bool
@@ -102,19 +104,19 @@ type TestConfig struct {
 }
 
 const (
-	defaultOperatorYamlURI      = "../operator.yaml"
+	defaultOperatorYamlURI      = "http://raw.githubusercontent.com/kubesmarts/kie-tools/refs/heads/9.105.x-prod/packages/sonataflow-operator/operator.yaml"
 	defaultRhpamOperatorYamlURI = "../rhpam-operator.yaml"
 	defaultCliPath              = "../build/_output/bin/kogito"
 
 	defaultOperatorProfilingDataAccessYamlURI = "../profiling/kogito-operator-profiling-data-access.yaml"
 	defaultOperatorProfilingOutputFileURI     = "./bdd-cover.out"
 
-	defaultKogitoExamplesURI = "https://github.com/apache/incubator-kie-kogito-examples"
+	defaultKogitoExamplesURI = "https://github.com/kiegroup/kogito-examples"
 
 	defaultLoadFactor      = 1
 	defaultHTTPRetryNumber = 3
 
-	defaultContainerEngine = "podman"
+	defaultContainerEngine = "docker"
 
 	installationSourceOlm  = "olm"
 	installationSourceYaml = "yaml"
@@ -122,6 +124,9 @@ const (
 
 var (
 	env = TestConfig{}
+
+	// Map at the package level to hold the flag pointers
+	relatedImagePointers = make(map[string]*string)
 )
 
 // BindFlags binds BDD tests env flags to given flag set
@@ -147,6 +152,16 @@ func BindFlags(set *flag.FlagSet) {
 	set.StringVar(&env.operatorInstallationSource, prefix+"operator_installation_source", installationSourceYaml, "Operator installation source")
 	set.StringVar(&env.operatorCatalogImage, prefix+"operator_catalog_image", "", "Operator catalog image")
 	set.BoolVar(&env.useProductOperator, prefix+"use_product_operator", false, "Set to true to deploy RHPAM Kogito operator, false for using Kogito operator. Default is false.")
+	// operator related images	
+	for _, v := range GetRelatedImageVars() {
+        flagName := strings.ToLower(strings.TrimPrefix(v, "RELATED_IMAGE_"))
+		// set.String automatically returns a *string linked to the CLI flag!
+		relatedImagePointers[v] = set.String(
+				"operator.related_image."+flagName, 
+				"", 
+				fmt.Sprintf("Override for %s", v),
+				)
+    }
 
 	// operator profiling
 	set.BoolVar(&env.operatorProfiling, prefix+"operator_profiling_enabled", false, "Enable the profiling of the operator. If enabled, operator will be automatically deployed with yaml files.")
@@ -154,7 +169,7 @@ func BindFlags(set *flag.FlagSet) {
 	set.StringVar(&env.operatorProfilingOutputFileURI, prefix+"operator_profiling_output_file_uri", defaultOperatorProfilingOutputFileURI, "Url or Path where to store the profiling outputs.")
 
 	// files/binaries
-	set.StringVar(&env.operatorYamlURI, prefix+"operator_yaml_uri", defaultOperatorYamlURI, "Url or Path to kogito-operator.yaml file")
+	set.StringVar(&env.operatorYamlURI, prefix+"operator_yaml_uri", defaultOperatorYamlURI, "Url or Path to operator.yaml file")
 	set.StringVar(&env.rhpamOperatorYamlURI, prefix+"rhpam_operator_yaml_uri", defaultRhpamOperatorYamlURI, "Url or Path to kogito-operator.yaml file")
 	set.StringVar(&env.cliPath, prefix+"cli_path", defaultCliPath, "Path to built CLI to test")
 
@@ -220,6 +235,27 @@ func addPersistenceTypeImageTagFlags(set *flag.FlagSet, imageTags *imageTags, im
 	key = fmt.Sprintf("%s_image_tag", key)
 
 	set.StringVar(imageTags.GetImageTagPointerFromPersistenceType(imageType, persistenceType), key, "", description)
+}
+
+// Get Array of string identifiers for all operator RELATED_IMAGES keys
+func GetRelatedImageVars() []string {
+	return []string{
+        "RELATED_IMAGE_JOBS_SERVICE_POSTGRESQL",
+        "RELATED_IMAGE_JOBS_SERVICE_EPHEMERAL",
+        "RELATED_IMAGE_DATA_INDEX_POSTGRESQL",
+        "RELATED_IMAGE_DATA_INDEX_EPHEMERAL",
+        "RELATED_IMAGE_DB_MIGRATOR_TOOL",
+        "RELATED_IMAGE_BASE_BUILDER",
+        "RELATED_IMAGE_DEVMODE",
+    }
+}
+
+// GetRelatedImage returns the override for a specific related image variable
+func GetRelatedImage(varName string) string {
+	if ptr, ok := relatedImagePointers[varName]; ok && ptr != nil {
+		return *ptr
+	}
+	return ""
 }
 
 // tests configuration

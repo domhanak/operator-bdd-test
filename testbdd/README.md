@@ -74,6 +74,7 @@ You can set these optional keys:
   *Default is false.*
 - `local_execution` to be set to true if running tests in local using either a local or remote cluster.
   *Default is false.*
+- `operator.related_image.jobs_service_postgresql` etc.
 
 Logs will be shown on the Terminal.
 

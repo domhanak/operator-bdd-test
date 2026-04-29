@@ -32,7 +32,8 @@ import (
 const (
 	sonataFlowOperatorTimeoutInMin = 5
 
-	sonataFlowOperatorName                  = "logic-operator-rhel8"
+	// TODO - this needs to use the correct value based on the STREAM ( CR/Nightly )
+	sonataFlowOperatorName                  = "logic-operator"
 	sonataFlowOperatorDeploymentName        = sonataFlowOperatorName + "-controller-manager"
 	sonataFlowOperatorPullImageSecretPrefix = sonataFlowOperatorName + "-dockercfg"
 )

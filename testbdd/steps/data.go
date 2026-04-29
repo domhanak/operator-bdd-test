@@ -32,6 +32,7 @@ import (
 // Data contains all data needed by Gherkin steps to run
 type Data struct {
 	*sonataFlowSteps.Data
+	OperatorNamespace string
 }
 
 // RegisterAllSteps register all steps available to the test suite
@@ -42,13 +43,20 @@ func (data *Data) RegisterAllSteps(ctx *godog.ScenarioContext) {
 	registerPostgresSteps(ctx, data)
 	registerSonataFlowSteps(ctx, data)
 	registerKubernetesSteps(ctx, data)
+	registerBulkWorkflowSteps(ctx, data)
 
 	// Used for debugging
 	ctx.Step(`^Wait (\d+) seconds?$`, data.waitSeconds)
+	ctx.Step(`^Wait for (\d+) pods to be running in the namespace$`, data.waitForNPodsRunning)
 }
 
 func (data *Data) waitSeconds(seconds int) error {
 	framework.GetMainLogger().Info("Waiting for " + strconv.Itoa(seconds) + " s")
 	time.After(time.Duration(seconds) * time.Second)
 	return nil
+}
+
+func (data *Data) waitForNPodsRunning(expectedCount int) error {
+	// Give it a generous timeout (e.g., 10 minutes) since spinning up 100 pods takes time
+	return framework.WaitForPodsWithLabel(data.Namespace, "app.kubernetes.io/component", "serverless-workflow", expectedCount, 3)
 }

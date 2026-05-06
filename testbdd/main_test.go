@@ -27,7 +27,7 @@ import (
 	"github.com/kubesmarts/operator-bdd-test/testbdd/meta"
 )
 
-func TestMain(m *testing.M) {
+func TestMain(_ *testing.M) {
 	// Create kube client
 	if err := framework.InitKubeClient(meta.GetRegisteredSchema()); err != nil {
 		panic(err)

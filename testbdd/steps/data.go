@@ -52,7 +52,7 @@ func (data *Data) RegisterAllSteps(ctx *godog.ScenarioContext) {
 
 func (data *Data) waitSeconds(seconds int) error {
 	framework.GetMainLogger().Info("Waiting for " + strconv.Itoa(seconds) + " s")
-	time.After(time.Duration(seconds) * time.Second)
+	time.Sleep(time.Duration(seconds) * time.Second)
 	return nil
 }
 

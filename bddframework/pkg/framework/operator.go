@@ -231,7 +231,7 @@ func IsOperatorRunning(namespace, operatorPackageName string, catalog OperatorCa
 func OperatorExistsUsingSubscription(namespace, operatorPackageName, operatorSource string) (bool, error) {
 	GetLogger(namespace).Debug("Checking Operator", "Subscription", operatorPackageName, "Namespace", namespace)
 
-	subscription, err := getSubscription(kubeClient, namespace, operatorPackageName, operatorSource)
+	subscription, err := getSubscriptionByPackage(kubeClient, namespace, operatorPackageName, operatorSource)
 	if err != nil {
 		return false, err
 	} else if subscription == nil {
@@ -264,7 +264,7 @@ func OperatorExistsUsingSubscription(namespace, operatorPackageName, operatorSou
 func SubscriptionResolutionFails(namespace, operatorPackageName, operatorSource string) (bool, error) {
 	GetLogger(namespace).Debug("Checking Subscription", "Subscription", operatorPackageName, "Namespace", namespace)
 
-	subscription, err := getSubscription(kubeClient, namespace, operatorPackageName, operatorSource)
+	subscription, err := getSubscriptionByPackage(kubeClient, namespace, operatorPackageName, operatorSource)
 	if err != nil {
 		return false, err
 	} else if subscription == nil {
@@ -351,21 +351,21 @@ func CreateNamespacedSubscriptionIfNotExist(namespace string, subscriptionName s
 	return subscription, nil
 }
 
-// GetSubscription returns subscription
-func GetSubscription(namespace, operatorPackageName string, catalog OperatorCatalog) (*olmapiv1alpha1.Subscription, error) {
-	subscription, err := getSubscription(kubeClient, namespace, operatorPackageName, catalog.source)
+// GetSubscription returns subscription by subscription name
+func GetSubscription(namespace, subscriptionName string, catalog OperatorCatalog) (*olmapiv1alpha1.Subscription, error) {
+	subscription, err := getSubscription(kubeClient, namespace, subscriptionName, catalog.source)
 	if err != nil {
 		return nil, err
 	} else if subscription == nil {
-		return nil, fmt.Errorf(" Subscription with name %s and operator source %s not found in namespace %s", operatorPackageName, catalog.source, namespace)
+		return nil, fmt.Errorf(" Subscription with name %s and operator source %s not found in namespace %s", subscriptionName, catalog.source, namespace)
 	}
 
 	return subscription, nil
 }
 
-// GetClusterWideSubscription returns cluster wide subscription
-func GetClusterWideSubscription(operatorPackageName string, catalog OperatorCatalog) (*olmapiv1alpha1.Subscription, error) {
-	return GetSubscription(GetClusterOperatorNamespace(), operatorPackageName, catalog)
+// GetClusterWideSubscription returns cluster wide subscription by subscription name
+func GetClusterWideSubscription(subscriptionName string, catalog OperatorCatalog) (*olmapiv1alpha1.Subscription, error) {
+	return GetSubscription(GetClusterOperatorNamespace(), subscriptionName, catalog)
 }
 
 // DeleteSubscription deletes Subscription and related objects

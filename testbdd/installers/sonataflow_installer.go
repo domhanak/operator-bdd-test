@@ -49,7 +49,7 @@ var (
 
 	// sonataFlowCustomOlmClusterWideInstaller installs SonataFlow cluster wide using OLM with custom catalog
 	sonataFlowCustomOlmClusterWideInstaller = installers.OlmClusterWideServiceInstaller{
-		SubscriptionName:                    sonataFlowOperatorSubscriptionName,
+		SubscriptionName:                    logicOperatorSubscriptionName,
 		Channel:                             sonataFlowOperatorSubscriptionChannel,
 		Catalog:                             framework.GetCustomKogitoOperatorCatalog,
 		InstallationTimeoutInMinutes:        5,

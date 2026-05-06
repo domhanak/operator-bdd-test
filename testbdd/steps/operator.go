@@ -117,9 +117,10 @@ func (data *Data) configMapContainsStrings(cmName string, table *godog.Table) er
 		// Placeholder Resolution Logic - allows to check for string influenced by the stream
 		if strings.Contains(expectedString, "${RELATED_IMAGE_BASE_BUILDER}") {
 			builderImage := config.GetRelatedImage("RELATED_IMAGE_BASE_BUILDER")
+			framework.GetLogger(data.Namespace).Info("Builder Image is:", "Image:", builderImage)
 			if builderImage == "" {
 				// Fallback to the default if the property wasn't provided during the test run
-				builderImage = "docker.io/apache/incubator-kie-sonataflow-builder:main"
+				builderImage = "registry.redhat.io/openshift-serverless-1/logic-swf-builder-rhel9:1.38.0"
 			}
 			expectedString = strings.ReplaceAll(expectedString, "${RELATED_IMAGE_BASE_BUILDER}", builderImage)
 		}

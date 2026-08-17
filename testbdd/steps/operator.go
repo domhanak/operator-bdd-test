@@ -40,6 +40,7 @@ func registerOperatorSteps(ctx *godog.ScenarioContext, data *Data) {
 	ctx.Step(`^SonataFlow Operator has (\d+) (?:pod|pods) running$`, data.sonataFlowOperatorHasPodsRunning)
 	ctx.Step(`^Service "([^"]*)" exists$`, data.serviceExists)
 	ctx.Step(`^ConfigMap "([^"]*)" exists$`, data.configMapExists)
+	ctx.Step(`^ConfigMap "([^"]*)" is empty$`, data.configMapIsEmpty)
 	ctx.Step(`^ConfigMap "([^"]*)" contains following strings:$`, data.configMapContainsStrings)
 	// Not migrated yet
 	//ctx.Step(`^Kogito operator should be installed$`, data.kogitoOperatorShouldBeInstalled)
@@ -75,29 +76,62 @@ func (data *Data) serviceExists(serviceName string) error {
 	return nil
 }
 
-func (data *Data) configMapExists(cmName string) error {
-	framework.GetLogger(data.OperatorNamespace).Info("Checking if ConfigMap exists", "configMap", cmName)
+// configMapNamespace returns OperatorNamespace when the operator has been deployed in this
+// scenario, and falls back to the scenario's own Namespace for ConfigMaps that live alongside
+// platform/workflow resources (e.g. *-props, *-managed-props).
+func (data *Data) configMapNamespace() string {
+	if data.OperatorNamespace != "" {
+		return data.OperatorNamespace
+	}
+	return data.Namespace
+}
 
-	exists, err := framework.IsConfigMapExist(types.NamespacedName{Name: cmName, Namespace: data.OperatorNamespace})
+func (data *Data) configMapExists(cmName string) error {
+	ns := data.configMapNamespace()
+	framework.GetLogger(ns).Info("Checking if ConfigMap exists", "configMap", cmName)
+
+	exists, err := framework.IsConfigMapExist(types.NamespacedName{Name: cmName, Namespace: ns})
 	if err != nil {
 		return fmt.Errorf("error while checking if ConfigMap %s exists: %v", cmName, err)
 	}
 	if !exists {
-		return fmt.Errorf("ConfigMap %s does not exist in namespace %s", cmName, data.OperatorNamespace)
+		return fmt.Errorf("ConfigMap %s does not exist in namespace %s", cmName, ns)
+	}
+	return nil
+}
+
+func (data *Data) configMapIsEmpty(cmName string) error {
+	ns := data.configMapNamespace()
+	framework.GetLogger(ns).Info("Checking that ConfigMap has no data", "configMap", cmName)
+
+	cm := &corev1.ConfigMap{}
+	exists, err := framework.GetObjectWithKey(types.NamespacedName{Name: cmName, Namespace: ns}, cm)
+	if err != nil {
+		return fmt.Errorf("error fetching ConfigMap %s: %v", cmName, err)
+	}
+	if !exists {
+		return fmt.Errorf("ConfigMap %s does not exist in namespace %s", cmName, ns)
+	}
+
+	for key, value := range cm.Data {
+		if strings.TrimSpace(value) != "" {
+			return fmt.Errorf("ConfigMap '%s' is not empty: key '%s' has value '%s'", cmName, key, value)
+		}
 	}
 	return nil
 }
 
 func (data *Data) configMapContainsStrings(cmName string, table *godog.Table) error {
-	framework.GetLogger(data.OperatorNamespace).Info("Validating ConfigMap contains strings", "configMap", cmName)
+	ns := data.configMapNamespace()
+	framework.GetLogger(ns).Info("Validating ConfigMap contains strings", "configMap", cmName)
 
 	cm := &corev1.ConfigMap{}
-	exists, err := framework.GetObjectWithKey(types.NamespacedName{Name: cmName, Namespace: data.OperatorNamespace}, cm)
+	exists, err := framework.GetObjectWithKey(types.NamespacedName{Name: cmName, Namespace: ns}, cm)
 	if err != nil {
 		return fmt.Errorf("error fetching ConfigMap %s: %v", cmName, err)
 	}
 	if !exists {
-		return fmt.Errorf("ConfigMap %s does not exist in namespace %s", cmName, data.OperatorNamespace)
+		return fmt.Errorf("ConfigMap %s does not exist in namespace %s", cmName, ns)
 	}
 
 	// Concatenate all ConfigMap values into one large string for easy searching

@@ -82,8 +82,12 @@ var (
 	sonataFlowOperatorBuilderManagerRoleName              = sonataFlowOperatorSubscriptionName + "-builder-manager-role"
 
 	// Openshift Serverless Logic naming constants
-	LogicOperatorNamespace        = "openshift-serverless-logic"
-	logicOperatorSubscriptionName = "logic-operator"
+	LogicOperatorNamespace           = "openshift-serverless-logic"
+	LogicOperatorSubscriptionName    = "logic-operator"
+	LogicOperatorSubscriptionChannel = "stable"
+	LogicOperatorDeploymentName      = LogicOperatorSubscriptionName + "-controller-manager"
+
+	logicOperatorSubscriptionName = LogicOperatorSubscriptionName
 
 	logicOperatorControllerConfigName                = logicOperatorSubscriptionName + "-controllers-config"
 	logicOperatorBuilderConfigName                   = logicOperatorSubscriptionName + "-builder-config"

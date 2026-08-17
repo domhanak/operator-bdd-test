@@ -46,6 +46,9 @@ STRING_TEST_PARAMS+=(custom_maven_repo_url maven_mirror_url quarkus_platform_mav
 BOOLEAN_TEST_PARAMS+=(examples_ignore_ssl)
 STRING_TEST_PARAMS+=(examples_uri examples_ref)
 
+# upgrade testing
+STRING_TEST_PARAMS+=("upgrade.from_version" "upgrade.to_version")
+
 # Infinispan
 STRING_TEST_PARAMS+=(infinispan_installation_source infinispan_storage_class)
 
@@ -385,8 +388,8 @@ if [ "${ENABLE_CLEAN_CLUSTER}" = "true" ]; then
 fi
 
 echo "-------- Running BDD tests"
-echo "DEBUG=${DEBUG} go test ${TEST_MAIN_DIR} -v -timeout \"${TIMEOUT}m\" --godog.tags=\"${TAGS}\" ${PARAMS} ${FEATURE}"
-DEBUG=${DEBUG} go test ${TEST_MAIN_DIR} -v -timeout "${TIMEOUT}m" --godog.tags="${TAGS}" ${PARAMS} ${FEATURE}
+echo "DEBUG=${DEBUG} go test ${TEST_MAIN_DIR} -v -count=1 -timeout \"${TIMEOUT}m\" --godog.tags=\"${TAGS}\" ${PARAMS} ${FEATURE}"
+DEBUG=${DEBUG} go test ${TEST_MAIN_DIR} -v -count=1 -timeout "${TIMEOUT}m" --godog.tags="${TAGS}" ${PARAMS} ${FEATURE}
 exit_code=$?
 
 echo "${exit_code}" > /tmp/bdd-exit-code.txt

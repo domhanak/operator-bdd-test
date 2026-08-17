@@ -43,6 +43,7 @@ func registerPlatformSteps(ctx *godog.ScenarioContext, data *Data) {
 	ctx.Step(`^SonataFlowPlatform is deployed$`, data.sonataFlowPlatformIsDeployed)
 	ctx.Step(`^SonataFlowPlatform with postgres config is deployed$`, data.sonataFlowPlatformWithDataIndexIsDeployed)
 	ctx.Step(`^SonataFlowPlatform with DataIndexAndJobsService using Postgres is deployed$`, data.sonataFlowPlatformWithDataIndexAndJobsServiceUsingPostgresIsDeployed)
+	ctx.Step(`^SonataFlowPlatform with DataIndexAndJobsService using Postgres and DB migration strategy is deployed$`, data.sonataFlowPlatformWithDataIndexAndJobsServiceWithDBMigrationIsDeployed)
 }
 
 func (data *Data) sonataFlowPlatformIsDeployed() error {
@@ -76,6 +77,29 @@ func (data *Data) sonataFlowPlatformWithDataIndexIsDeployed() error {
 	return err
 }
 
+func (data *Data) sonataFlowPlatformWithDataIndexAndJobsServiceWithDBMigrationIsDeployed() error {
+	projectDir, _ := utils.GetProjectDir()
+	projectDir = strings.Replace(projectDir, "/testbdd", "", -1)
+
+	out, err := framework.CreateCommand("oc", "apply", "-f",
+		filepath.Join(projectDir, test.GetSFPlatformWithDIandJSWithDBMigration()),
+		"-n",
+		data.Namespace).Execute()
+	if err != nil {
+		return fmt.Errorf("applying SonataFlowPlatform WithDataIndexAndJobsServiceWithDBMigration failed, output: %s: %w", out, err)
+	}
+
+	if jobServiceDepErr := framework.WaitForDeploymentRunning(data.Namespace, "sonataflow-platform-jobs-service", 1, 5); jobServiceDepErr != nil {
+		return fmt.Errorf("jobs-service deployment did not become ready: %w", jobServiceDepErr)
+	}
+
+	if dataIndexDepErr := framework.WaitForDeploymentRunning(data.Namespace, "sonataflow-platform-data-index-service", 1, 8); dataIndexDepErr != nil {
+		return fmt.Errorf("data-index-service deployment did not become ready: %w", dataIndexDepErr)
+	}
+
+	return nil
+}
+
 func (data *Data) sonataFlowPlatformWithDataIndexAndJobsServiceUsingPostgresIsDeployed() error {
 	projectDir, _ := utils.GetProjectDir()
 	projectDir = strings.Replace(projectDir, "/testbdd", "", -1)
@@ -86,11 +110,15 @@ func (data *Data) sonataFlowPlatformWithDataIndexAndJobsServiceUsingPostgresIsDe
 		"-n",
 		data.Namespace).Execute()
 
-	jobServiceDepErr := framework.WaitForDeploymentRunning(data.Namespace, "sonataflow-platform-jobs-service", 1, 2)
+	if jobServiceDepErr := framework.WaitForDeploymentRunning(data.Namespace, "sonataflow-platform-jobs-service", 1, 2); jobServiceDepErr != nil {
+		framework.GetLogger(data.Namespace).Error(jobServiceDepErr, fmt.Sprintf("jobs-service deployment did not become ready, output: %s", out))
+	}
 
-	dataIndexDepErr := framework.WaitForDeploymentRunning(data.Namespace, "sonataflow-platform-data-index-service", 1, 2)
+	if dataIndexDepErr := framework.WaitForDeploymentRunning(data.Namespace, "sonataflow-platform-data-index-service", 1, 2); dataIndexDepErr != nil {
+		framework.GetLogger(data.Namespace).Error(dataIndexDepErr, fmt.Sprintf("data-index-service deployment did not become ready, output: %s", out))
+	}
 
-	if err != nil || jobServiceDepErr != nil || dataIndexDepErr != nil {
+	if err != nil {
 		framework.GetLogger(data.Namespace).Error(err, fmt.Sprintf("Applying SonataFlowPlatform WithDataIndexAndJobsServiceUsingPostgres failed, output: %s", out))
 	}
 

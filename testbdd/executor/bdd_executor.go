@@ -49,6 +49,7 @@ const (
 	cliTag         = "@cli"
 	smokeTag       = "@smoke"
 	performanceTag = "@performance"
+	upgradeTag     = "@upgradeTests"
 )
 
 var (
@@ -126,6 +127,11 @@ func configureTags() {
 			// Turn off performance tests
 			appendTag("~" + performanceTag)
 		}
+	}
+
+	// Exclude upgrade tests unless explicitly requested via --godog.tags
+	if !strings.Contains(godogOpts.Tags, upgradeTag) {
+		appendTag("~" + upgradeTag)
 	}
 
 	if !strings.Contains(godogOpts.Tags, disabledTag) {

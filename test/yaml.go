@@ -29,8 +29,8 @@ import (
 
 	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api"
 	operatorapi "github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/log"
+	"github.com/davecgh/go-spew/spew"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
@@ -60,6 +60,7 @@ const (
 	sonataFlowPlatformWithCacheMinikubeYamlCR = "sonataflow.org_v1alpha08_sonataflowplatform_withCache_minikube.yaml"
 	sonataFlowPlatformForOpenshift            = "sonataflow.org_v1alpha08_sonataflowplatform_openshift.yaml"
 	sonataFlowPlatformDIAndJSUsingPostgres    = "sonataflow/platform/sonataflow.org_v1alpha08/sonataflow_platform_with_postgresql_dataindex_and_job_service.yaml"
+	sonataFlowPlatformDIAndJSWithDBMigration  = "sonataflow/platform/sonataflow.org_v1alpha08/sonataflow_platform_with_postgresql_dataindex_and_job_service_db_migration.yaml"
 	sonataFlowClusterPlatformYamlCR           = "sonataflow.org_v1alpha08_sonataflowclusterplatform.yaml"
 	sonataFlowBuilderConfig                   = "sonataflow-operator-builder-config_v1_configmap.yaml"
 	sonataFlowBuildSucceed                    = "sonataflow.org_v1alpha08_sonataflowbuild.yaml"
@@ -288,6 +289,10 @@ func GetPlatformOpenshiftE2eTest() string {
 
 func GetSFPlatformWithDIandJSUsingPostgres() string {
 	return e2eSamples + sonataFlowPlatformDIAndJSUsingPostgres
+}
+
+func GetSFPlatformWithDIandJSWithDBMigration() string {
+	return e2eSamples + sonataFlowPlatformDIAndJSWithDBMigration
 }
 
 func GetSonataFlowE2eOrderProcessingFolder() string {

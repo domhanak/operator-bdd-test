@@ -39,6 +39,7 @@ import (
 func registerSonataFlowSteps(ctx *godog.ScenarioContext, data *Data) {
 	ctx.Step(`^SonataFlow orderprocessing example is deployed$`, data.sonataFlowOrderProcessingExampleIsDeployed)
 	ctx.Step(`^SonataFlow callbackstatetimeouts example is deployed$`, data.sonataFlowCallbackstateTimeoutsIsDeployed)
+	ctx.Step(`^SonataFlow "([^"]*)" is deleted$`, data.sonataFlowIsDeleted)
 	ctx.Step(`^SonataFlow greeting example is deployed$`, data.sonataFlowGreetingExampleIsDeployed)
 	ctx.Step(`^SonataFlow greeting gitops example is deployed`, data.sonataFlowGreetingGitOpsExampleIsDeployed)
 	ctx.Step(`^SonataFlow vet example is deployed$`, data.sonataFlowVetExampleIsDeployed)
@@ -97,6 +98,22 @@ func (data *Data) sonataFlowCallbackstateTimeoutsIsDeployed() error {
 		framework.GetLogger(data.Namespace).Error(err, fmt.Sprintf("Applying SonataFlow failed, output: %s", out))
 	}
 	return err
+}
+
+func (data *Data) sonataFlowIsDeleted(name string) error {
+	sf, err := getSonataFlow(data.Namespace, name)
+	if err != nil {
+		return fmt.Errorf("error looking up SonataFlow %s: %w", name, err)
+	}
+	if sf == nil {
+		// Already gone — idempotent.
+		return nil
+	}
+	if err := framework.DeleteObject(sf); err != nil {
+		return fmt.Errorf("error deleting SonataFlow %s: %w", name, err)
+	}
+	framework.GetLogger(data.Namespace).Info("Deleted SonataFlow", "name", name)
+	return nil
 }
 
 func (data *Data) sonataFlowGreetingExampleIsDeployed() error {

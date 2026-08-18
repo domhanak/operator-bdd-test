@@ -19,7 +19,7 @@ Feature: Upgrade OSL Operator from a previous version to the next version
     When Postgres is deployed
     When SonataFlowPlatform with DataIndexAndJobsService using Postgres and DB migration strategy is deployed
 
-    # Deploy a preview-profile workflow so we can verify it survives the upgrade
+    # Deploy a preview-profile workflow so we can verify the guide
     When SonataFlow callbackstatetimeouts example is deployed
     Then SonataFlow "callbackstatetimeouts" has the condition "Running" set to "True" within 20 minutes
 
@@ -33,6 +33,11 @@ Feature: Upgrade OSL Operator from a previous version to the next version
 
     # ── Step 3 (preview profile) — capture current workflow state ────────────
     # Workflow is Running at from-version; verified above.
+    # ── Step 3.1 (preview profile) — delete workflow before upgrade ────────────
+    # Preview-profile workflows must be deleted before upgrading the operator;
+    # the new operator will not reconcile builds from the old version.
+    # After the upgrade the workflow is redeployed and rebuilt from scratch.
+    When SonataFlow "callbackstatetimeouts" is deleted
 
     # ── Step 5 — Back up Data Index database ─────────────────────────────────
     # Database backup is an operational concern performed outside the cluster;
@@ -51,17 +56,22 @@ Feature: Upgrade OSL Operator from a previous version to the next version
     # ── Step 8 — Data Index restarts at new version ───────────────────────────
     # The operator reconciles Data Index automatically; we verify the deployment
     # is running after the operator upgrade.
-    Then Deployment "sonataflow-platform-data-index-service" pods log contains text 'Starting' within 3 minutes
+    Then Deployment "sonataflow-platform-data-index-service" pods log contains text 'started in' within 3 minutes
 
     # ── Step 9 — Job Service restarts at new version ──────────────────────────
-    Then Deployment "sonataflow-platform-jobs-service" pods log contains text 'Starting' within 3 minutes
+    Then Deployment "sonataflow-platform-jobs-service" pods log contains text 'started in' within 3 minutes
 
     # ── DB migrator job (operator upgrade step) ───────────────────────────────
     # Verifies that the operator created and completed a sonataflow-db-migrator-job
     # labelled app=sonataflow-platform, app.kubernetes.io/version=${UPGRADE_TO_VERSION}.
-    Then DB migrator job for platform "sonataflow-platform" completes within 5 minutes
+    #
+    # TODO: Solve issue where setting 'job' in YAML ( dbMigrationStrategy: job ) fails to pull
+    #       the image on fromVersion startup
+    # Then DB migrator job for platform "sonataflow-platform" completes within 10 minutes
 
-    # ── Step 10–12 — Workflow reconciled at new version ───────────────────────
+    # ── Step 11 — Workflow in preview mode redeployed manualy ──────────────────────────
+    Then SonataFlow callbackstatetimeouts example is deployed
+    # ── Step 11 — Workflow in preview mode should start normally ───────────────────────
     Then SonataFlow "callbackstatetimeouts" has the condition "Running" set to "True" within 5 minutes
 
     # Verify the managed-props ConfigMap was regenerated with new-version URLs

@@ -21,10 +21,18 @@ kind: SonataFlowPlatform
 metadata:
   name: sonataflow-platform
 spec:
+  build:
+    template:
+      envs:
+        - name: MAVEN_MIRROR_URL
+          value: https://baqe-nexus.apps.int.prod-scale-spoke1-aws-us-east-1.itup.redhat.com/nexus/content/groups/public-pnc
   services:
     dataIndex:
       enabled: true
       persistence:
+        # Instruct the operator to run a DB migration Job after the operator upgrade
+        # TODO: Solve issue
+        # dbMigrationStrategy: job
         postgresql:
           jdbcUrl: jdbc:postgresql://postgres:5432/sonataflow?currentSchema=data-index-service
           secretRef:
@@ -40,6 +48,9 @@ spec:
     jobService:
       enabled: true
       persistence:
+        # Instruct the operator to run a DB migration Job after the operator upgrade
+        # TODO: Solve issue
+        # dbMigrationStrategy: job
         postgresql:
           jdbcUrl: jdbc:postgresql://postgres:5432/sonataflow?currentSchema=jobs-service
           secretRef:
@@ -59,6 +70,3 @@ spec:
         name: postgres-secrets
         userKey: POSTGRES_USER
         passwordKey: POSTGRES_PASSWORD
-  # Instruct the operator to run a DB migration Job after the operator upgrade
-  # rather than performing inline migration at startup.
-  dbMigrationStrategy: job

@@ -71,18 +71,27 @@ func (data *Data) sonataFlowOperatorHasPodsRunning(numberOfPods int) error {
 }
 
 func (data *Data) serviceExists(serviceName string) error {
-	framework.GetLogger(data.OperatorNamespace).Info("Checking if Service exists", "service", serviceName)
+	ns := data.configMapNamespace()
+	framework.GetLogger(ns).Info("Checking if Service exists", "service", serviceName)
 
-	_, err := framework.GetService(data.OperatorNamespace, serviceName)
+	_, err := framework.GetService(ns, serviceName)
 	if err != nil {
-		return fmt.Errorf("Service %s does not exist in namespace %s: %v", serviceName, data.OperatorNamespace, err)
+		return fmt.Errorf("Service %s does not exist in namespace %s: %v", serviceName, ns, err)
 	}
 	return nil
 }
 
-// configMapNamespace returns OperatorNamespace when the operator has been deployed in this
-// scenario, and falls back to the scenario's own Namespace for ConfigMaps that live alongside
-// platform/workflow resources (e.g. *-props, *-managed-props).
+// configMapNamespace returns the namespace for ConfigMap and Service lookups.
+//
+// Rules:
+//   - data.OperatorNamespace is set only when a scenario explicitly installs the
+//     operator via "SonataFlow Operator is deployed". In that case, the step also
+//     checks operator-level resources (builder-config, metrics-service) which live
+//     in openshift-serverless-logic, so OperatorNamespace takes precedence.
+//   - In upgrade scenarios "SonataFlow Operator at from-version is installed via
+//     OLM" deliberately does NOT set data.OperatorNamespace, so all resource
+//     checks resolve to data.Namespace (the randomly generated scenario namespace,
+//     e.g. bdd-4a36, where platform and workflow resources are deployed).
 func (data *Data) configMapNamespace() string {
 	if data.OperatorNamespace != "" {
 		return data.OperatorNamespace
@@ -188,12 +197,17 @@ func (data *Data) sonataFlowOperatorAtFromVersionIsInstalledViaOLM() error {
 		return fmt.Errorf("upgrade from-version is not configured: set --tests.upgrade.from_version")
 	}
 
-	data.OperatorNamespace = installers.LogicOperatorNamespace
+	// Do NOT set data.OperatorNamespace here. The upgrade scenario always calls
+	// "Namespace is created" next, which sets data.Namespace to the randomly
+	// generated scenario namespace. Keeping data.OperatorNamespace empty means
+	// that serviceExists / configMapNamespace will resolve to data.Namespace
+	// rather than openshift-serverless-logic for platform/workflow resources.
+	operatorNS := installers.LogicOperatorNamespace
 	// Subscription lives in the cluster-operator namespace (openshift-operators).
 	subNS := framework.GetClusterOperatorNamespace()
 	fromCSV := fmt.Sprintf("logic-operator.v%s", fromVersion)
 
-	framework.GetLogger(data.OperatorNamespace).Info("Installing SonataFlow operator at from-version via OLM",
+	framework.GetLogger(operatorNS).Info("Installing SonataFlow operator at from-version via OLM",
 		"version", fromVersion, "csv", fromCSV,
 		"catalog", "redhat-operators", "subscriptionNamespace", subNS)
 
@@ -209,11 +223,12 @@ func (data *Data) sonataFlowOperatorAtFromVersionIsInstalledViaOLM() error {
 		"--ignore-not-found=true").Execute(); err != nil {
 		return fmt.Errorf("error deleting existing subscription: %w", err)
 	}
-	// Also delete the CSV from the target namespace so OLM re-installs cleanly.
-	if _, err := framework.CreateCommand(cli, "delete", "csv", fromCSV,
-		"-n", installers.LogicOperatorNamespace,
-		"--ignore-not-found=true").Execute(); err != nil {
-		return fmt.Errorf("error deleting existing CSV %s: %w", fromCSV, err)
+	// Delete ALL logic-operator CSVs from the operator namespace.
+	// A leftover CSV from a previous test run (e.g. the to-version from the last
+	// run) has no subscription reference and causes OLM's constraint solver to
+	// emit "@existing ... is not referenced by a subscription" conflicts.
+	if err := deleteAllLogicOperatorCSVs(cli, installers.LogicOperatorNamespace); err != nil {
+		return fmt.Errorf("error deleting existing logic-operator CSVs: %w", err)
 	}
 
 	fromInstaller := &kogitoInstallers.OlmClusterWideServiceInstaller{
@@ -227,7 +242,7 @@ func (data *Data) sonataFlowOperatorAtFromVersionIsInstalledViaOLM() error {
 		CleanupClusterWideOlmCrsInNamespace: func(_ string) bool { return true },
 	}
 
-	return fromInstaller.Install(data.OperatorNamespace)
+	return fromInstaller.Install(operatorNS)
 }
 
 // resolveUpgradePlaceholders replaces ${UPGRADE_FROM_VERSION} and ${UPGRADE_TO_VERSION}
@@ -256,41 +271,53 @@ func (data *Data) sonataFlowOperatorIsUpgradedToNextVersion() error {
 		return fmt.Errorf("upgrade to-version is not configured: set --tests.upgrade.to_version")
 	}
 
-	ns := installers.LogicOperatorNamespace
+	// The operator itself runs in openshift-serverless-logic, but the OLM Subscription
+	// and InstallPlans are cluster-wide and live in openshift-operators.
+	operatorNS := installers.LogicOperatorNamespace
+	subNS := framework.GetClusterOperatorNamespace()
 	subscriptionName := installers.LogicOperatorSubscriptionName
 
-	framework.GetLogger(ns).Info("Upgrading SonataFlow operator via OLM",
-		"subscription", subscriptionName, "targetCSV", fmt.Sprintf("logic-operator.v%s", toVersion))
+	framework.GetLogger(operatorNS).Info("Upgrading SonataFlow operator via OLM",
+		"subscription", subscriptionName, "subscriptionNamespace", subNS,
+		"targetCSV", fmt.Sprintf("logic-operator.v%s", toVersion))
 
 	cli := "kubectl"
 	if framework.IsOpenshift() {
 		cli = "oc"
 	}
 
-	// Pin the subscription to the target CSV so OLM queues an InstallPlan.
-	// The channel stays "stable" — only the desired CSV changes.
+	// Switch the subscription source to the custom IIB catalog which carries the
+	// to-version CSV, then pin it to the target CSV so OLM queues an InstallPlan.
+	// The from-version was installed from redhat-operators; the to-version exists
+	// only in the catalog image supplied via --tests.operator_catalog_image (the
+	// custom "bdd-tests-kogito-catalog" CatalogSource registered at suite start).
 	targetCSV := fmt.Sprintf("logic-operator.v%s", toVersion)
+	customCatalog := framework.GetCustomKogitoOperatorCatalog()
 	_, err := framework.CreateCommand(cli, "patch", "subscription", subscriptionName,
-		"-n", ns,
+		"-n", subNS,
 		"--type=merge",
-		fmt.Sprintf(`--patch={"spec":{"channel":"%s","startingCSV":"%s"}}`,
-			installers.LogicOperatorSubscriptionChannel, targetCSV),
+		fmt.Sprintf(`--patch={"spec":{"channel":"%s","startingCSV":"%s","source":"%s","sourceNamespace":"%s"}}`,
+			installers.LogicOperatorSubscriptionChannel, targetCSV,
+			customCatalog.Source(), customCatalog.Namespace()),
 	).Execute()
 	if err != nil {
 		return fmt.Errorf("error patching subscription to CSV %s: %v", targetCSV, err)
 	}
 
 	// Wait for OLM to surface an InstallPlan with the target CSV, then approve it.
-	if approveErr := framework.WaitForOnOpenshift(ns, "InstallPlan for "+targetCSV+" approved", 5,
+	// InstallPlans are created in the same namespace as the Subscription (openshift-operators).
+	if approveErr := framework.WaitForOnOpenshift(operatorNS, "InstallPlan for "+targetCSV+" approved", 5,
 		func() (bool, error) {
-			return approveInstallPlanForCSV(cli, ns, targetCSV)
+			return approveInstallPlanForCSV(cli, subNS, targetCSV)
 		},
 	); approveErr != nil {
 		return fmt.Errorf("error approving InstallPlan for %s: %v", targetCSV, approveErr)
 	}
 
-	// Wait for the new operator pod to be running.
-	return framework.WaitForPodsWithLabel(ns, "app.kubernetes.io/name", "logic-operator", 1, 5)
+	// The to-version operator pod is deployed by OLM into the subscription namespace
+	// (openshift-operators), not into openshift-serverless-logic. The pod label
+	// app.kubernetes.io/name is set to "sonataflow-operator" by the CSV.
+	return framework.WaitForPodsWithLabel(subNS, "app.kubernetes.io/name", "sonataflow-operator", 1, 5)
 }
 
 // approveInstallPlanForCSV finds an InstallPlan that contains the target CSV and approves it.
@@ -327,28 +354,70 @@ func approveInstallPlanForCSV(cli, namespace, targetCSV string) (bool, error) {
 	return false, nil
 }
 
-// sonataFlowOperatorRunningVersionMatchesUpgradeTarget verifies that the controller-manager
-// Deployment in the operator namespace is running a pod whose image tag matches the
-// configured upgrade to-version.
+// deleteAllLogicOperatorCSVs lists all CSVs in namespace whose name begins with
+// "logic-operator." and deletes each one. This cleans up any version left from a
+// previous test run before re-installing from scratch via OLM.
+func deleteAllLogicOperatorCSVs(cli, namespace string) error {
+	out, err := framework.CreateCommand(cli, "get", "csv",
+		"-n", namespace,
+		"-o", "jsonpath={range .items[*]}{.metadata.name}{\"\\n\"}{end}",
+	).Execute()
+	if err != nil {
+		// If the CSV CRD doesn't exist yet, there's nothing to delete.
+		return nil
+	}
+	prefix := installers.LogicOperatorSubscriptionName + "."
+	for _, name := range strings.Split(strings.TrimSpace(out), "\n") {
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		framework.GetLogger(namespace).Info("Deleting stale CSV", "csv", name)
+		if _, delErr := framework.CreateCommand(cli, "delete", "csv", name,
+			"-n", namespace,
+			"--ignore-not-found=true").Execute(); delErr != nil {
+			return fmt.Errorf("error deleting CSV %s: %w", name, delErr)
+		}
+	}
+	return nil
+}
+
+// sonataFlowOperatorRunningVersionMatchesUpgradeTarget verifies that the OLM-managed
+// controller-manager Deployment has been reconciled by the target CSV version.
+//
+// Image tags are not used for version detection because OLM uses SHA256 digests
+// (e.g. registry.redhat.io/...@sha256:...) which do not embed a version string.
+// Instead we check the olm.owner label that OLM stamps on every Deployment it
+// manages — its value is always "<package>.v<version>" (e.g. logic-operator.v1.39.0).
 func (data *Data) sonataFlowOperatorRunningVersionMatchesUpgradeTarget() error {
 	toVersion := config.GetUpgradeToVersion()
 	if toVersion == "" {
 		return fmt.Errorf("upgrade to-version is not configured: set --tests.upgrade.to_version")
 	}
 
-	ns := installers.LogicOperatorNamespace
-	deployment, err := framework.GetDeployment(ns, installers.LogicOperatorDeploymentName)
-	if err != nil {
-		return fmt.Errorf("error fetching operator deployment: %v", err)
-	}
+	// The upgraded operator is deployed by OLM into the subscription namespace.
+	ns := framework.GetClusterOperatorNamespace()
+	expectedCSV := fmt.Sprintf("%s.v%s", installers.LogicOperatorSubscriptionName, toVersion)
 
-	for _, container := range deployment.Spec.Template.Spec.Containers {
-		if strings.Contains(container.Image, toVersion) {
-			framework.GetLogger(ns).Info("Operator version verified", "image", container.Image, "version", toVersion)
-			return nil
-		}
-	}
-	return fmt.Errorf("operator deployment does not reference version %s in any container image", toVersion)
+	// OLM reconciles the Deployment asynchronously after approving the InstallPlan.
+	// Poll until the olm.owner label on the Deployment matches the target CSV.
+	return framework.WaitForOnOpenshift(ns, "operator deployment owned by "+expectedCSV, 5,
+		func() (bool, error) {
+			deployment, err := framework.GetDeployment(ns, installers.LogicOperatorDeploymentName)
+			if err != nil {
+				// Deployment may not exist yet during the rollout; keep waiting.
+				return false, nil
+			}
+			actualCSV := deployment.Labels["olm.owner"]
+			if actualCSV == expectedCSV {
+				framework.GetLogger(ns).Info("Operator version verified via olm.owner label",
+					"olm.owner", actualCSV)
+				return true, nil
+			}
+			framework.GetLogger(ns).Info("Waiting for olm.owner label update",
+				"current", actualCSV, "expected", expectedCSV)
+			return false, nil
+		},
+	)
 }
 
 // dbMigratorJobForPlatformCompletesWithinMinutes waits for the sonataflow-db-migrator-job

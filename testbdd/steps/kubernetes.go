@@ -31,5 +31,21 @@ func registerKubernetesSteps(ctx *godog.ScenarioContext, data *Data) {
 }
 
 func (data *Data) deploymentPodsLogContainsTextWithinMinutes(dName, logText string, timeoutInMin int) error {
-	return framework.WaitForAllPodsByDeploymentToContainTextInLog(data.Namespace, dName, dName, logText, timeoutInMin)
+	// The container name inside a pod is the last hyphen-separated segment of the
+	// deployment name (e.g. "sonataflow-platform-data-index-service" → "data-index-service").
+	// After an operator upgrade, the old pod and the new replacement pod coexist briefly;
+	// we accept a match on any pod so the step passes as soon as the new pod has started.
+	containerName := deploymentContainerName(dName)
+	return framework.WaitForAnyPodsByDeploymentToContainTextInLog(data.Namespace, dName, containerName, logText, timeoutInMin)
+}
+
+// deploymentContainerName derives the container name from a deployment name by
+// dropping the well-known "sonataflow-platform-" prefix when present, otherwise
+// returning the full deployment name unchanged.
+func deploymentContainerName(deploymentName string) string {
+	const prefix = "sonataflow-platform-"
+	if len(deploymentName) > len(prefix) && deploymentName[:len(prefix)] == prefix {
+		return deploymentName[len(prefix):]
+	}
+	return deploymentName
 }

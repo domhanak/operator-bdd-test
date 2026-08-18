@@ -530,3 +530,9 @@ func GetOperatorCatalog(namespace, source string) OperatorCatalog {
 		namespace: namespace,
 	}
 }
+
+// Source returns the CatalogSource name of this catalog.
+func (c OperatorCatalog) Source() string { return c.source }
+
+// Namespace returns the namespace in which the CatalogSource lives.
+func (c OperatorCatalog) Namespace() string { return c.namespace }

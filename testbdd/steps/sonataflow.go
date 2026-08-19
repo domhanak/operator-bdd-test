@@ -22,6 +22,7 @@ package steps
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -31,6 +32,7 @@ import (
 
 	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api"
 	"github.com/apache/incubator-kie-tools/packages/sonataflow-operator/api/v1alpha08"
+	"github.com/kubesmarts/operator-bdd-test/bddframework/pkg/config"
 	"github.com/kubesmarts/operator-bdd-test/bddframework/pkg/framework"
 	"github.com/kubesmarts/operator-bdd-test/test"
 	"github.com/kubesmarts/operator-bdd-test/test/utils"
@@ -39,6 +41,8 @@ import (
 func registerSonataFlowSteps(ctx *godog.ScenarioContext, data *Data) {
 	ctx.Step(`^SonataFlow orderprocessing example is deployed$`, data.sonataFlowOrderProcessingExampleIsDeployed)
 	ctx.Step(`^SonataFlow callbackstatetimeouts example is deployed$`, data.sonataFlowCallbackstateTimeoutsIsDeployed)
+	ctx.Step(`^SonataFlow callbackstatetimeouts gitops at from-version is deployed$`, data.sonataFlowCallbackstateTimeoutsGitopsAtFromVersionIsDeployed)
+	ctx.Step(`^SonataFlow callbackstatetimeouts gitops at to-version is redeployed$`, data.sonataFlowCallbackstateTimeoutsGitopsAtToVersionIsRedeployed)
 	ctx.Step(`^SonataFlow "([^"]*)" is deleted$`, data.sonataFlowIsDeleted)
 	ctx.Step(`^SonataFlow greeting example is deployed$`, data.sonataFlowGreetingExampleIsDeployed)
 	ctx.Step(`^SonataFlow greeting gitops example is deployed`, data.sonataFlowGreetingGitOpsExampleIsDeployed)
@@ -100,6 +104,49 @@ func (data *Data) sonataFlowCallbackstateTimeoutsIsDeployed() error {
 	return err
 }
 
+func (data *Data) sonataFlowCallbackstateTimeoutsGitopsAtFromVersionIsDeployed() error {
+	return data.applyCallbackstateTimeoutsGitops(config.GetUpgradeFromVersion())
+}
+
+func (data *Data) sonataFlowCallbackstateTimeoutsGitopsAtToVersionIsRedeployed() error {
+	return data.applyCallbackstateTimeoutsGitops(config.GetUpgradeToVersion())
+}
+
+// applyCallbackstateTimeoutsGitops reads the gitops YAML template, substitutes
+// the ${UPGRADE_GITOPS_IMAGE_VERSION} placeholder with imageVersion, writes
+// the resolved content to a temp file, runs oc apply, then removes the temp file.
+func (data *Data) applyCallbackstateTimeoutsGitops(imageVersion string) error {
+	projectDir, _ := utils.GetProjectDir()
+	projectDir = strings.Replace(projectDir, "/testbdd", "", -1)
+
+	templatePath := filepath.Join(projectDir, test.GetSonataFlowCallbackstateTimeoutsGitops())
+	templateBytes, err := os.ReadFile(templatePath)
+	if err != nil {
+		return fmt.Errorf("reading gitops YAML template: %w", err)
+	}
+
+	resolved := strings.ReplaceAll(string(templateBytes), "${UPGRADE_GITOPS_IMAGE_VERSION}", imageVersion)
+
+	tmpFile, err := os.CreateTemp("", "callbackstatetimeouts-gitops-*.yaml")
+	if err != nil {
+		return fmt.Errorf("creating temp file for gitops YAML: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.WriteString(resolved); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("writing resolved gitops YAML: %w", err)
+	}
+	tmpFile.Close()
+
+	out, err := framework.CreateCommand("oc", "apply", "-f", tmpPath, "-n", data.Namespace).Execute()
+	if err != nil {
+		framework.GetLogger(data.Namespace).Error(err, fmt.Sprintf("Applying gitops SonataFlow failed, output: %s", out))
+	}
+	return err
+}
+
 func (data *Data) sonataFlowIsDeleted(name string) error {
 	sf, err := getSonataFlow(data.Namespace, name)
 	if err != nil {
@@ -113,7 +160,13 @@ func (data *Data) sonataFlowIsDeleted(name string) error {
 		return fmt.Errorf("error deleting SonataFlow %s: %w", name, err)
 	}
 	framework.GetLogger(data.Namespace).Info("Deleted SonataFlow", "name", name)
-	return nil
+	// Wait for the CR to be fully removed so subsequent oc apply calls do not
+	// race against a still-terminating resource.
+	return framework.WaitForOnOpenshift(data.Namespace, fmt.Sprintf("SonataFlow %s is gone", name), 2,
+		func() (bool, error) {
+			sf, err := getSonataFlow(data.Namespace, name)
+			return sf == nil, err
+		})
 }
 
 func (data *Data) sonataFlowGreetingExampleIsDeployed() error {

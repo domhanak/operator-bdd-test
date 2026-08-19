@@ -22,6 +22,16 @@ Feature: Upgrade OSL Operator from a previous version to the next version
     # Deploy a preview-profile workflow so we can verify the guide
     When SonataFlow callbackstatetimeouts example is deployed
     Then SonataFlow "callbackstatetimeouts" has the condition "Running" set to "True" within 20 minutes
+    # Delete the preview CR before deploying the gitops variant to avoid a
+    # name conflict: both CRs share the same name "callbackstatetimeouts".
+    When SonataFlow "callbackstatetimeouts" is deleted
+
+    # ── GitOps profile — deploy at from-version (guide §11.6.3) ─────────────
+    # A fresh gitops CR is created (not patched from preview) since the preview
+    # CR was just deleted. Verifying Running confirms the from-version pre-built
+    # image is accessible and the operator reconciles gitops workflows correctly.
+    When SonataFlow callbackstatetimeouts gitops at from-version is deployed
+    Then SonataFlow "callbackstatetimeouts" has the condition "Running" set to "True" within 5 minutes
 
     # ── Step 1 — Increase Job Service retry interval ─────────────────────────
     # Patched by applying a higher value before the operator stops managing pods.
@@ -31,12 +41,8 @@ Feature: Upgrade OSL Operator from a previous version to the next version
     # ── Step 2 (dev profile) — scale down / annotate dev workflows ───────────
     # No dev workflows in this scenario; step is satisfied by the preview workflow above.
 
-    # ── Step 3 (preview profile) — capture current workflow state ────────────
-    # Workflow is Running at from-version; verified above.
-    # ── Step 3.1 (preview profile) — delete workflow before upgrade ────────────
-    # Preview-profile workflows must be deleted before upgrading the operator;
-    # the new operator will not reconcile builds from the old version.
-    # After the upgrade the workflow is redeployed and rebuilt from scratch.
+    # ── Step 3 (gitops profile) — delete gitops workflow before upgrade ───────
+    # Guide §11.6.3 step 7: delete the gitops workflow before upgrading.
     When SonataFlow "callbackstatetimeouts" is deleted
 
     # ── Step 5 — Back up Data Index database ─────────────────────────────────
@@ -69,9 +75,32 @@ Feature: Upgrade OSL Operator from a previous version to the next version
     #       the image on fromVersion startup
     # Then DB migrator job for platform "sonataflow-platform" completes within 10 minutes
 
-    # ── Step 11 — Workflow in preview mode redeployed manualy ──────────────────────────
+    # ── GitOps profile — redeploy at to-version (guide §11.6.3.3) ────────────
+    # Redeploy with the image rebuilt using the to-version OSL builder.
+    # The new image tag forces the cluster to pull the rebuilt image rather
+    # than reusing the cached from-version image (imagePullPolicy: IfNotPresent).
+    When SonataFlow callbackstatetimeouts gitops at to-version is redeployed
+    Then SonataFlow "callbackstatetimeouts" has the condition "Running" set to "True" within 5 minutes
+    Then ConfigMap "callbackstatetimeouts-managed-props" exists
+    Then ConfigMap "callbackstatetimeouts-managed-props" contains following strings:
+      | kogito.data-index.health-enabled = true    |
+      | kogito.data-index.url                      |
+      | kogito.jobs-service.health-enabled = true  |
+      | kogito.jobs-service.url                    |
+      | quarkus.http.port = 8080                   |
+      | quarkus.devservices.enabled = false        |
+      | quarkus.kogito.devservices.enabled = false |
+
+    # ── Delete gitops CR before redeploying preview variant ───────────────────
+    # The preview redeploy step below applies the preview-profile YAML to the
+    # same CR name "callbackstatetimeouts". Without this delete the existing
+    # gitops CR would be patched back to preview profile, triggering a new
+    # Buildah build from scratch (~20 min) instead of reusing the cached image.
+    When SonataFlow "callbackstatetimeouts" is deleted
+
+    # ── Step 11 — Workflow in preview mode redeployed manually ───────────────
     Then SonataFlow callbackstatetimeouts example is deployed
-    # ── Step 11 — Workflow in preview mode should start normally ───────────────────────
+    # ── Step 11 — Workflow in preview mode should start normally ─────────────
     Then SonataFlow "callbackstatetimeouts" has the condition "Running" set to "True" within 5 minutes
 
     # Verify the managed-props ConfigMap was regenerated with new-version URLs

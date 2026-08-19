@@ -46,7 +46,8 @@ const (
 	sonataFlowOrderProcessingFolder           = "order-processing"
 	sonataFlowGreetingFolder                  = "greeting"
 	sonataFlowVetFolder                       = "vet"
-	sonataFlowCallbackstateTimeoutsFolder     = "callbackstate-timeouts"
+	sonataFlowCallbackstateTimeoutsFolder          = "callbackstate-timeouts"
+	sonataFlowCallbackstateTimeoutsGitopsWorkflow   = "callbackstate-timeouts/gitops/callbackstatetimeouts_gitops.yaml"
 	postgresFolder                            = "persistence/postgres"
 	sonataFlowSampleYamlCR                    = "sonataflow.org_v1alpha08_sonataflow.yaml"
 	SonataFlowGreetingsWithDataInputSchemaCR  = "sonataflow.org_v1alpha08_sonataflow_greetings_datainput.yaml"
@@ -309,6 +310,10 @@ func GetSonataFlowE2eGreetingFolder() string {
 
 func GetSonataFlowE2eCallbackstateTimeoutsFolder() string {
 	return e2eSamples + sonataFlowCallbackstateTimeoutsFolder
+}
+
+func GetSonataFlowCallbackstateTimeoutsGitops() string {
+	return e2eSamples + sonataFlowCallbackstateTimeoutsGitopsWorkflow
 }
 
 func GetSonataFlowE2EPlatformServicesDirectory() string {

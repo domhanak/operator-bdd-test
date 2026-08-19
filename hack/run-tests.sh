@@ -47,7 +47,7 @@ BOOLEAN_TEST_PARAMS+=(examples_ignore_ssl)
 STRING_TEST_PARAMS+=(examples_uri examples_ref)
 
 # upgrade testing
-STRING_TEST_PARAMS+=("upgrade.from_version" "upgrade.to_version")
+STRING_TEST_PARAMS+=("upgrade.from_version" "upgrade.to_version" "upgrade.to_kogito_runtime_version" "upgrade.to_quarkus_core_version")
 
 # Infinispan
 STRING_TEST_PARAMS+=(infinispan_installation_source infinispan_storage_class)

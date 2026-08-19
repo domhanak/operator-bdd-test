@@ -86,8 +86,10 @@ type TestConfig struct {
 	examplesRepositoryIgnoreSSL bool
 
 	// upgrade testing
-	upgradeFromVersion string
-	upgradeToVersion   string
+	upgradeFromVersion          string
+	upgradeToVersion            string
+	upgradeToKogitoRuntimeVersion string
+	upgradeToQuarkusCoreVersion   string
 
 	// Infinispan
 	infinispanInstallationSource string
@@ -211,6 +213,8 @@ func BindFlags(set *flag.FlagSet) {
 	// upgrade testing
 	set.StringVar(&env.upgradeFromVersion, prefix+"upgrade.from_version", "", "Operator version to upgrade from (e.g. 1.37.2)")
 	set.StringVar(&env.upgradeToVersion, prefix+"upgrade.to_version", "", "Operator version to upgrade to (e.g. 1.38.0)")
+	set.StringVar(&env.upgradeToKogitoRuntimeVersion, prefix+"upgrade.to_kogito_runtime_version", "", "Kogito runtime version for the to-version operator (e.g. 9.106.0.redhat-00002)")
+	set.StringVar(&env.upgradeToQuarkusCoreVersion, prefix+"upgrade.to_quarkus_core_version", "", "Quarkus core version for the to-version operator (e.g. 3.33.2.redhat-00008)")
 
 	// Infinispan
 	set.StringVar(&env.infinispanInstallationSource, prefix+"infinispan_installation_source", installationSourceOlm, "Infinispan operator installation source")
@@ -522,6 +526,16 @@ func GetUpgradeFromVersion() string {
 // GetUpgradeToVersion returns the operator version being upgraded to
 func GetUpgradeToVersion() string {
 	return env.upgradeToVersion
+}
+
+// GetUpgradeToKogitoRuntimeVersion returns the Kogito runtime version for the to-version operator
+func GetUpgradeToKogitoRuntimeVersion() string {
+	return env.upgradeToKogitoRuntimeVersion
+}
+
+// GetUpgradeToQuarkusCoreVersion returns the Quarkus core version for the to-version operator
+func GetUpgradeToQuarkusCoreVersion() string {
+	return env.upgradeToQuarkusCoreVersion
 }
 
 // Infinispan

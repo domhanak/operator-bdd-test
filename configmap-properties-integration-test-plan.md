@@ -1,0 +1,55 @@
+# ConfigMap properties integration test plan
+
+## Top-Level Overview
+Add one new BDD feature that contains 3 independent scenarios to validate ConfigMap property content for each target deployment: Workflow, Data Index, and Job Service. The plan is to reuse the existing deployment step patterns from [`testbdd/features/job-service/deploy_job_service.feature`](testbdd/features/job-service/deploy_job_service.feature), [`testbdd/features/data-index/deploy_data_index_service.feature`](testbdd/features/data-index/deploy_data_index_service.feature), and [`testbdd/features/sonataflow/platform/platform_with_data_index_and_job_service.feature`](testbdd/features/sonataflow/platform/platform_with_data_index_and_job_service.feature), while reusing the existing ConfigMap assertion step already implemented in [`configMapContainsStrings()`](testbdd/steps/operator.go:91). Expected property values should be derived from the existing workflow and platform YAML test data, especially [`test/testdata/order-processing/04_v1_configmap_properties.yaml`](test/testdata/order-processing/04_v1_configmap_properties.yaml) and [`test/testdata/sonataflow/platform/sonataflow.org_v1alpha08/sonataflow_platform_with_postgresql_dataindex_and_job_service.yaml`](test/testdata/sonataflow/platform/sonataflow.org_v1alpha08/sonataflow_platform_with_postgresql_dataindex_and_job_service.yaml). ConfigMap naming is now treated as deterministic for workflows: each workflow scenario should validate 2 ConfigMaps derived from the workflow name, one suffixed with `-props` and one suffixed with `-managed-props`, so the plan does not rely on runtime name discovery for those workflow resources.
+
+## Sub-Tasks
+
+### 1. Define the new BDD feature structure and scenario coverage
+- **Intent** — Create a single new feature file with the requested 3-scenario structure so the new test fits the repo's BDD organization and keeps Workflow, Data Index, and Job Service validation isolated.
+- **Expected Outcomes** — A new feature file exists with one scenario per deployment type, each using existing Given and When step conventions and clearly expressing the expected ConfigMap validation goal. The workflow scenario explicitly validates both workflow ConfigMaps.
+- **Todo List**
+  1. Choose the feature location and naming to align with nearby deployment-focused features under [`testbdd/features`](testbdd/features).
+  2. Mirror the existing deployment sequencing used by [`testbdd/features/data-index/deploy_data_index_service.feature`](testbdd/features/data-index/deploy_data_index_service.feature) and [`testbdd/features/job-service/deploy_job_service.feature`](testbdd/features/job-service/deploy_job_service.feature).
+  3. For the workflow scenario, reuse a deployable example already covered by [`testbdd/steps/sonataflow.go`](testbdd/steps/sonataflow.go) so no unnecessary new deployment steps are introduced.
+  4. Express each scenario with explicit ConfigMap existence and content assertions using the existing step text from [`registerOperatorSteps()`](testbdd/steps/operator.go:38).
+  5. In the workflow scenario, include assertions for both workflow ConfigMaps derived from the workflow name.
+- **Relevant Context** — [`testbdd/features/job-service/deploy_job_service.feature`](testbdd/features/job-service/deploy_job_service.feature), [`testbdd/features/data-index/deploy_data_index_service.feature`](testbdd/features/data-index/deploy_data_index_service.feature), [`testbdd/features/sonataflow/platform/platform_with_data_index_and_job_service.feature`](testbdd/features/sonataflow/platform/platform_with_data_index_and_job_service.feature), [`registerOperatorSteps()`](testbdd/steps/operator.go:38)
+- **Status** — [ ] pending
+
+### 2. Identify the exact ConfigMap names and expected property strings for each scenario
+- **Intent** — Ground the assertions in existing repo-managed test data so the test checks real expected configuration rather than guessed values.
+- **Expected Outcomes** — For Workflow, Data Index, and Job Service, the implementation has a confirmed ConfigMap name and a minimal set of expected strings that directly trace back to existing YAML definitions. For Workflow specifically, this means 2 ConfigMaps per workflow, with [`callbackstatetimeouts-props`](#) expected to be empty unless workflow-specific properties are defined.
+- **Todo List**
+  1. For the workflow scenario, account for both workflow-owned ConfigMaps: [`callbackstatetimeouts-props`](#), which should be empty when no workflow-specific properties are defined, and [`callbackstatetimeouts-managed-props`](#), which should contain the provided managed property set.
+  2. Use the confirmed deterministic workflow naming convention to assert 2 workflow-related ConfigMaps directly from the workflow name with the `-props` and `-managed-props` suffixes.
+  3. For the managed workflow ConfigMap, use the provided expected content for [`callbackstatetimeouts-managed-props`](#), including the `kogito.data-index.url`, `kogito.jobs-service.url`, outgoing messaging URLs, health flags, service URL, and Quarkus runtime properties that point to the `gitops-persistence-callback` namespace.
+  4. For Data Index, use the provided expected content for `sonataflow-platform-data-index-service-props`, including `kogito.service.url = http://sonataflow-platform-data-index-service.gitops-persistence-callback`, `quarkus.devservices.enabled = false`, `quarkus.http.host = 0.0.0.0`, `quarkus.http.port = 8080`, `quarkus.kogito.devservices.enabled = false`, and `quarkus.smallrye-health.check."io.quarkus.kafka.client.health.KafkaHealthCheck".enabled = false`.
+  5. For Job Service, use the provided expected content for `sonataflow-platform-jobs-service-props`, including `kogito.jobs-service.http.job-status-change-events = true`, `kogito.jobs-service.management.leader-check.expiration-in-seconds = 60`, `kogito.service.url = http://sonataflow-platform-jobs-service.gitops-persistence-callback`, `mp.messaging.outgoing.kogito-job-service-job-status-events-http.url = http://sonataflow-platform-data-index-service.gitops-persistence-callback/jobs`, and the provided Quarkus health and runtime properties.
+  6. Use explicit single ConfigMap names for Data Index and Job Service derived from the service deployment name, for example `sonataflow-platform-data-index-service-props` for Data Index and `sonataflow-platform-jobs-service-props` for Job Service.
+  7. Prefer the smallest assertion set that proves the right properties were propagated, such as JDBC URL schema names, secret reference keys, or workflow application properties.
+- **Relevant Context** — [`test/testdata/order-processing/04_v1_configmap_properties.yaml`](test/testdata/order-processing/04_v1_configmap_properties.yaml), [`test/testdata/sonataflow/platform/sonataflow.org_v1alpha08/sonataflow_platform_with_postgresql_dataindex_and_job_service.yaml`](test/testdata/sonataflow/platform/sonataflow.org_v1alpha08/sonataflow_platform_with_postgresql_dataindex_and_job_service.yaml), [`configMapContainsStrings()`](testbdd/steps/operator.go:91), [`sonataFlowPlatformWithDataIndexAndJobsServiceUsingPostgresIsDeployed()`](testbdd/steps/sonataflowplatform.go:79)
+- **Status** — [ ] pending
+
+### 3. Add any minimal step support needed for stable ConfigMap assertions
+- **Intent** — Reuse existing steps directly because workflow, Data Index, and Job Service ConfigMap naming is now explicit.
+- **Expected Outcomes** — The scenarios can reliably assert against the intended ConfigMaps without introducing broad abstractions or unrelated refactors, including an explicit empty-content assertion for [`callbackstatetimeouts-props`](#).
+- **Todo List**
+  1. Check whether existing steps are sufficient: deployment steps from [`registerPlatformSteps()`](testbdd/steps/sonataflowplatform.go:42), workflow steps from [`registerSonataFlowSteps()`](testbdd/steps/sonataflow.go:39), and ConfigMap steps from [`registerOperatorSteps()`](testbdd/steps/operator.go:38).
+  2. Use the existing `ConfigMap exists` step unchanged for both workflow ConfigMaps named with the `-props` and `-managed-props` suffix convention.
+  3. Confirm whether an explicit empty-content assertion step is needed for [`callbackstatetimeouts-props`](#), since the current [`configMapContainsStrings()`](testbdd/steps/operator.go:91) step validates presence of strings but not emptiness.
+  4. Use the existing ConfigMap steps unchanged for the single Data Index and Job Service ConfigMaps named from the service deployment names, such as `sonataflow-platform-data-index-service-props`.
+  5. Keep any new logic scoped to this test need and avoid generic refactoring beyond the required resolution path.
+- **Relevant Context** — [`registerPlatformSteps()`](testbdd/steps/sonataflowplatform.go:42), [`registerSonataFlowSteps()`](testbdd/steps/sonataflow.go:39), [`registerOperatorSteps()`](testbdd/steps/operator.go:38), [`configMapExists()`](testbdd/steps/operator.go:78), [`configMapContainsStrings()`](testbdd/steps/operator.go:91)
+- **Status** — [ ] pending
+
+### 4. Validate the new feature through the existing BDD test entrypoint
+- **Intent** — Ensure the new scenarios integrate cleanly with the current BDD suite and exercise the expected deployment paths.
+- **Expected Outcomes** — The relevant BDD test execution passes for the new feature without introducing new failures in the touched scope.
+- **Todo List**
+  1. Run the relevant BDD test command through the existing test entrypoint in [`testbdd/main_test.go`](testbdd/main_test.go).
+  2. If scenario tagging is needed, align it with existing conventions already used in feature files such as [`@Smoke`](testbdd/features/job-service/deploy_job_service.feature:3) or mode-specific tags in [`testbdd/features/sonataflow/platform/platform_with_data_index_and_job_service.feature`](testbdd/features/sonataflow/platform/platform_with_data_index_and_job_service.feature:11).
+  3. Verify each of the 3 scenarios deploys its target resource and asserts the expected ConfigMap content, including an empty [`callbackstatetimeouts-props`](#), a populated [`callbackstatetimeouts-managed-props`](#), and 1 explicit `-props` ConfigMap for each service scenario.
+  4. Keep the scenario assertions explicit about the workflow and service ConfigMap naming conventions for future maintainability.
+- **Relevant Context** — [`testbdd/main_test.go`](testbdd/main_test.go), [`testbdd/features/job-service/deploy_job_service.feature`](testbdd/features/job-service/deploy_job_service.feature:3), [`testbdd/features/data-index/deploy_data_index_service.feature`](testbdd/features/data-index/deploy_data_index_service.feature:3), [`testbdd/features/sonataflow/platform/platform_with_data_index_and_job_service.feature`](testbdd/features/sonataflow/platform/platform_with_data_index_and_job_service.feature:11), provided expected values for [`callbackstatetimeouts-managed-props`](#), provided expected values for `sonataflow-platform-data-index-service-props`, provided expected values for `sonataflow-platform-jobs-service-props`
+- **Status** — [ ] pending

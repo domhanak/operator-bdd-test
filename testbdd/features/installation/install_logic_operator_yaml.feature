@@ -13,7 +13,7 @@ Feature: Deploy Logic Operator with using YAML
     And ConfigMap "logic-operator-controllers-config" exists
     And ConfigMap "logic-operator-builder-config" contains following strings:
       | FROM ${RELATED_IMAGE_BASE_BUILDER} AS builder                |
-      | FROM registry.access.redhat.com/ubi9/openjdk-17-runtime:1.23 |
+      | FROM registry.access.redhat.com/ubi9/openjdk-17-runtime:1.24 |
     When Postgres is deployed
     When SonataFlowPlatform with DataIndexAndJobsService using Postgres is deployed
     When SonataFlow callbackstatetimeouts example is deployed

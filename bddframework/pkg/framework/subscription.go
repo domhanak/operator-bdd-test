@@ -26,10 +26,30 @@ import (
 	"github.com/kubesmarts/operator-bdd-test/bddframework/pkg/framework/client/kubernetes"
 )
 
-// getSubscription returns subscription or nil if no subscription is found.
-func getSubscription(cli *client.Client, namespace, packageName, catalogSource string) (*olmapiv1alpha1.Subscription, error) {
+// getSubscription returns subscription by name or nil if no subscription is found.
+func getSubscription(cli *client.Client, namespace, subscriptionName, catalogSource string) (*olmapiv1alpha1.Subscription, error) {
 	log := GetLogger("subscription")
-	log.Debug("Trying to fetch Subscription", "namespace", namespace, "Package name", packageName, "CatalogSource", namespace, packageName, catalogSource)
+	log.Debug("Trying to fetch Subscription", "namespace", namespace, "Subscription name", subscriptionName, "CatalogSource", catalogSource)
+
+	subs := &olmapiv1alpha1.SubscriptionList{}
+	if err := kubernetes.ResourceC(cli).ListWithNamespace(namespace, subs); err != nil {
+		return nil, err
+	}
+
+	for _, sub := range subs.Items {
+		if sub.Name == subscriptionName &&
+			sub.Spec.CatalogSource == catalogSource {
+			return &sub, nil
+		}
+	}
+
+	return nil, nil
+}
+
+// getSubscriptionByPackage returns subscription by package name or nil if no subscription is found.
+func getSubscriptionByPackage(cli *client.Client, namespace, packageName, catalogSource string) (*olmapiv1alpha1.Subscription, error) {
+	log := GetLogger("subscription")
+	log.Debug("Trying to fetch Subscription", "namespace", namespace, "Package name", packageName, "CatalogSource", catalogSource)
 
 	subs := &olmapiv1alpha1.SubscriptionList{}
 	if err := kubernetes.ResourceC(cli).ListWithNamespace(namespace, subs); err != nil {

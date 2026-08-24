@@ -170,7 +170,7 @@ func initializeTestSuite(ctx *godog.TestSuiteContext) {
 		monitorOlmNamespace()
 
 		if config.IsOperatorInstalledByOlm() {
-			if err := installKogitoOperatorCatalogSource(); err != nil {
+			if err := installGlobalSonataFlowOperator(); err != nil {
 				panic(err)
 			}
 		}
@@ -190,7 +190,7 @@ func initializeTestSuite(ctx *godog.TestSuiteContext) {
 		}
 
 		if config.IsOperatorInstalledByOlm() {
-			deleteKogitoOperatorCatalogSource()
+			uninstallGlobalSonataFlowOperator()
 		}
 
 		stopOlmNamespaceMonitoring()
@@ -329,24 +329,40 @@ func stopNamespaceMonitoring(namespace string) {
 	//}
 }
 
-// Install cluster wide Kogito operator from OLM
-func installKogitoOperatorCatalogSource() error {
-	// Create CatalogSource
-	if _, err := framework.CreateKogitoOperatorCatalogSource(); err != nil {
-		return fmt.Errorf("error installing custer wide Sonataflow operator using OLM: %v", err)
+// Install cluster wide SonataFlow operator from OLM
+func installGlobalSonataFlowOperator() error {
+	installer, err := installers.GetSonataFlowInstaller()
+	if err != nil {
+		return fmt.Errorf("error getting SonataFlow installer: %w", err)
 	}
 
-	// Wait for the CatalogSource
+	if _, err := framework.CreateKogitoOperatorCatalogSource(); err != nil {
+		return fmt.Errorf("error creating SonataFlow CatalogSource: %w", err)
+	}
+
 	if err := framework.WaitForKogitoOperatorCatalogSourceReady(); err != nil {
-		return fmt.Errorf("error while waiting for Sonataflow operator CatalogSource initialization: %v", err)
+		return fmt.Errorf("error waiting for SonataFlow CatalogSource readiness: %w", err)
+	}
+
+	if err := installer.Install(""); err != nil {
+		return fmt.Errorf("error installing global SonataFlow operator: %w", err)
 	}
 
 	return nil
 }
 
-func deleteKogitoOperatorCatalogSource() {
+func uninstallGlobalSonataFlowOperator() {
+	installer, err := installers.GetSonataFlowInstaller()
+	if err != nil {
+		framework.GetMainLogger().Error(err, "Error getting SonataFlow installer for global uninstall")
+	} else if clusterWideInstaller, ok := installer.(interface{ uninstallFromCluster() error }); ok {
+		if err := clusterWideInstaller.uninstallFromCluster(); err != nil {
+			framework.GetMainLogger().Error(err, "Error uninstalling global SonataFlow operator")
+		}
+	}
+
 	if err := framework.DeleteKogitoOperatorCatalogSource(); err != nil {
-		framework.GetMainLogger().Error(err, "Error deleting Sonataflow operator CatalogSource")
+		framework.GetMainLogger().Error(err, "Error deleting SonataFlow CatalogSource")
 	}
 }
 

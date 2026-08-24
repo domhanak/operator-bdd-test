@@ -28,6 +28,9 @@ spec:
             userKey: POSTGRES_USER
             passwordKey: POSTGRES_PASSWORD
       podTemplate:
+        metadata:                              # <-- doesn't exist today
+          labels:
+            osl.logic.com/securityZone: api
         initContainers:
           - name: init-postgres
             image: registry.access.redhat.com/ubi9/ubi-micro:latest
@@ -43,6 +46,9 @@ spec:
             userKey: POSTGRES_USER
             passwordKey: POSTGRES_PASSWORD
       podTemplate:
+        metadata:                              # <-- doesn't exist today
+          labels:
+            osl.logic.com/securityZone: api
         initContainers:
           - name: init-postgres
             image: registry.access.redhat.com/ubi9/ubi-micro:latest

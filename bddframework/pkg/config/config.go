@@ -85,9 +85,12 @@ type TestConfig struct {
 	examplesRepositoryRef       string
 	examplesRepositoryIgnoreSSL bool
 
+	// operator version (for non-upgrade scenarios that still need a specific version installed via OLM)
+	operatorVersion string
+
 	// upgrade testing
-	upgradeFromVersion          string
-	upgradeToVersion            string
+	upgradeFromVersion            string
+	upgradeToVersion              string
 	upgradeToKogitoRuntimeVersion string
 	upgradeToQuarkusCoreVersion   string
 
@@ -209,6 +212,9 @@ func BindFlags(set *flag.FlagSet) {
 	set.StringVar(&env.examplesRepositoryURI, prefix+"examples_uri", defaultKogitoExamplesURI, "Set the URI for the kogito-examples repository")
 	set.StringVar(&env.examplesRepositoryRef, prefix+"examples_ref", "", "Set the branch for the kogito-examples repository")
 	set.BoolVar(&env.examplesRepositoryIgnoreSSL, prefix+"examples_ignore_ssl", false, "Set to true to ignore SSL check when checking out examples repository")
+
+	// operator version for non-upgrade OLM installs
+	set.StringVar(&env.operatorVersion, prefix+"operator.version", "", "Operator version to install via OLM (e.g. 1.39.0)")
 
 	// upgrade testing
 	set.StringVar(&env.upgradeFromVersion, prefix+"upgrade.from_version", "", "Operator version to upgrade from (e.g. 1.37.2)")
@@ -536,6 +542,11 @@ func GetUpgradeToKogitoRuntimeVersion() string {
 // GetUpgradeToQuarkusCoreVersion returns the Quarkus core version for the to-version operator
 func GetUpgradeToQuarkusCoreVersion() string {
 	return env.upgradeToQuarkusCoreVersion
+}
+
+// GetOperatorVersion returns the operator version to install via OLM for non-upgrade scenarios
+func GetOperatorVersion() string {
+	return env.operatorVersion
 }
 
 // Infinispan

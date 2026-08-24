@@ -422,15 +422,31 @@ func isMongoDBOperatorRunning(namespace string) (bool, error) {
 	return exists, nil
 }
 
-// CreateKogitoOperatorCatalogSource create a Kogito operator catalog Source
+// CreateKogitoOperatorCatalogSource creates (or recreates) the Kogito operator CatalogSource.
+// A stale object from a previous run may have no image set, which causes OLM to reject it.
+// We always delete before creating so the correct catalog image is guaranteed to be applied.
 func CreateKogitoOperatorCatalogSource() (*olmapiv1alpha1.CatalogSource, error) {
-	catalogNamespace := GetCustomKogitoOperatorCatalog().namespace
+	catalog := GetCustomKogitoOperatorCatalog()
+	catalogNamespace := catalog.namespace
 	GetLogger(catalogNamespace).Info("Installing custom Kogito operator CatalogSource", "name", kogitoCatalogSourceName, "namespace", catalogNamespace)
+
+	// Delete any pre-existing object so we always apply the current catalog image.
+	stale := &olmapiv1alpha1.CatalogSource{
+		ObjectMeta: metav1.ObjectMeta{Name: catalog.source, Namespace: catalog.namespace},
+	}
+	if exists, err := kubernetes.ResourceC(kubeClient).Fetch(stale); err != nil {
+		return nil, fmt.Errorf("Error checking for existing CatalogSource %s: %v", kogitoCatalogSourceName, err)
+	} else if exists {
+		GetLogger(catalogNamespace).Info("Deleting stale CatalogSource before recreating", "name", kogitoCatalogSourceName)
+		if err := kubernetes.ResourceC(kubeClient).Delete(stale); err != nil {
+			return nil, fmt.Errorf("Error deleting stale CatalogSource %s: %v", kogitoCatalogSourceName, err)
+		}
+	}
 
 	cs := &olmapiv1alpha1.CatalogSource{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      GetCustomKogitoOperatorCatalog().source,
-			Namespace: GetCustomKogitoOperatorCatalog().namespace,
+			Name:      catalog.source,
+			Namespace: catalog.namespace,
 		},
 		Spec: olmapiv1alpha1.CatalogSourceSpec{
 			SourceType:  olmapiv1alpha1.SourceTypeGrpc,
@@ -439,7 +455,7 @@ func CreateKogitoOperatorCatalogSource() (*olmapiv1alpha1.CatalogSource, error) 
 		},
 	}
 
-	if err := kubernetes.ResourceC(kubeClient).CreateIfNotExists(cs); err != nil {
+	if err := kubernetes.ResourceC(kubeClient).Create(cs); err != nil {
 		return nil, fmt.Errorf("Error creating CatalogSource %s: %v", kogitoCatalogSourceName, err)
 	}
 

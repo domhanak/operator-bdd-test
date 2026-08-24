@@ -42,6 +42,7 @@ func registerOperatorSteps(ctx *godog.ScenarioContext, data *Data) {
 	ctx.Step(`^ConfigMap "([^"]*)" exists$`, data.configMapExists)
 	ctx.Step(`^ConfigMap "([^"]*)" is empty$`, data.configMapIsEmpty)
 	ctx.Step(`^ConfigMap "([^"]*)" contains following strings:$`, data.configMapContainsStrings)
+	ctx.Step(`^SonataFlow Operator is installed via OLM$`, data.sonataFlowOperatorIsInstalledViaOLM)
 	ctx.Step(`^SonataFlow Operator at from-version is installed via OLM$`, data.sonataFlowOperatorAtFromVersionIsInstalledViaOLM)
 	ctx.Step(`^SonataFlow Operator is upgraded to next version$`, data.sonataFlowOperatorIsUpgradedToNextVersion)
 	ctx.Step(`^SonataFlow Operator running version matches upgrade target$`, data.sonataFlowOperatorRunningVersionMatchesUpgradeTarget)
@@ -182,6 +183,17 @@ func (data *Data) configMapContainsStrings(cmName string, table *godog.Table) er
 	return nil
 }
 
+// sonataFlowOperatorIsInstalledViaOLM installs the OSL operator at the version configured
+// via --tests.operator.version using OLM and the custom catalog image. This is the generic
+// install step for non-upgrade scenarios that still need a specific operator version pinned.
+func (data *Data) sonataFlowOperatorIsInstalledViaOLM() error {
+	version := config.GetOperatorVersion()
+	if version == "" {
+		return fmt.Errorf("operator version is not configured: set --tests.operator.version")
+	}
+	return data.installOperatorViaOLM(version)
+}
+
 // sonataFlowOperatorAtFromVersionIsInstalledViaOLM installs the OSL operator at the
 // configured from-version using OLM and the custom catalog image. It creates an
 // OlmClusterWideServiceInstaller on the fly with:
@@ -196,53 +208,63 @@ func (data *Data) sonataFlowOperatorAtFromVersionIsInstalledViaOLM() error {
 	if fromVersion == "" {
 		return fmt.Errorf("upgrade from-version is not configured: set --tests.upgrade.from_version")
 	}
+	return data.installOperatorViaOLM(fromVersion)
+}
 
-	// Do NOT set data.OperatorNamespace here. The upgrade scenario always calls
-	// "Namespace is created" next, which sets data.Namespace to the randomly
-	// generated scenario namespace. Keeping data.OperatorNamespace empty means
-	// that serviceExists / configMapNamespace will resolve to data.Namespace
-	// rather than openshift-serverless-logic for platform/workflow resources.
+// installOperatorViaOLM is the shared implementation for OLM-based operator installs.
+// It deletes any pre-existing subscription and CSVs so OLM starts clean, then installs
+// the operator at the given version using the redhat-operators product catalog.
+//
+// Do NOT set data.OperatorNamespace here. Callers that need namespace-scoped resource
+// resolution (serviceExists / configMapNamespace) should resolve to data.Namespace, which
+// is set by the subsequent "Namespace is created" step.
+func (data *Data) installOperatorViaOLM(version string) error {
 	operatorNS := installers.LogicOperatorNamespace
-	// Subscription lives in the cluster-operator namespace (openshift-operators).
 	subNS := framework.GetClusterOperatorNamespace()
-	fromCSV := fmt.Sprintf("logic-operator.v%s", fromVersion)
+	csv := fmt.Sprintf("logic-operator.v%s", version)
 
-	framework.GetLogger(operatorNS).Info("Installing SonataFlow operator at from-version via OLM",
-		"version", fromVersion, "csv", fromCSV,
+	framework.GetLogger(operatorNS).Info("Installing SonataFlow operator via OLM",
+		"version", version, "csv", csv,
 		"catalog", "redhat-operators", "subscriptionNamespace", subNS)
 
-	// Delete any pre-existing subscription so OLM starts clean at fromCSV.
-	// CreateIfNotExists would silently keep a stale subscription locked to a
-	// different startingCSV, causing unsatisfiable constraint errors.
 	cli := "kubectl"
 	if framework.IsOpenshift() {
 		cli = "oc"
 	}
+	// Delete any pre-existing subscription so OLM starts clean at the target CSV.
+	// CreateIfNotExists would silently keep a stale subscription locked to a
+	// different startingCSV, causing unsatisfiable constraint errors.
 	if _, err := framework.CreateCommand(cli, "delete", "subscription",
 		installers.LogicOperatorSubscriptionName, "-n", subNS,
 		"--ignore-not-found=true").Execute(); err != nil {
 		return fmt.Errorf("error deleting existing subscription: %w", err)
 	}
 	// Delete ALL logic-operator CSVs from the operator namespace.
-	// A leftover CSV from a previous test run (e.g. the to-version from the last
-	// run) has no subscription reference and causes OLM's constraint solver to
-	// emit "@existing ... is not referenced by a subscription" conflicts.
+	// A leftover CSV from a previous test run has no subscription reference and
+	// causes OLM's constraint solver to emit "@existing ... is not referenced by
+	// a subscription" conflicts.
 	if err := deleteAllLogicOperatorCSVs(cli, installers.LogicOperatorNamespace); err != nil {
 		return fmt.Errorf("error deleting existing logic-operator CSVs: %w", err)
 	}
 
-	fromInstaller := &kogitoInstallers.OlmClusterWideServiceInstaller{
-		SubscriptionName: installers.LogicOperatorSubscriptionName,
-		Channel:          installers.LogicOperatorSubscriptionChannel,
-		StartingCSV:      fromCSV,
-		// Use redhat-operators (registry.redhat.io) — no staging auth required.
-		Catalog:                             framework.GetProductCatalog,
+	// Use the custom IIB catalog when one is configured (operator_catalog_image is set),
+	// otherwise fall back to the product catalog (redhat-operators).
+	catalogFn := framework.GetProductCatalog
+	if config.GetOperatorCatalogImage() != "" {
+		catalogFn = framework.GetCustomKogitoOperatorCatalog
+	}
+
+	installer := &kogitoInstallers.OlmClusterWideServiceInstaller{
+		SubscriptionName:                    installers.LogicOperatorSubscriptionName,
+		Channel:                             installers.LogicOperatorSubscriptionChannel,
+		StartingCSV:                         csv,
+		Catalog:                             catalogFn,
 		InstallationTimeoutInMinutes:        10,
 		GetAllClusterWideOlmCrsInNamespace:  func(_ string) ([]client.Object, error) { return nil, nil },
 		CleanupClusterWideOlmCrsInNamespace: func(_ string) bool { return true },
 	}
 
-	return fromInstaller.Install(operatorNS)
+	return installer.Install(operatorNS)
 }
 
 // resolveUpgradePlaceholders replaces ${UPGRADE_FROM_VERSION} and ${UPGRADE_TO_VERSION}

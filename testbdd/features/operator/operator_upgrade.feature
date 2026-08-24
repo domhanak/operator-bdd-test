@@ -60,12 +60,12 @@ Feature: Upgrade OSL Operator from a previous version to the next version
     Then SonataFlow Operator running version matches upgrade target
 
     # ── Step 8 — Data Index restarts at new version ───────────────────────────
-    # The operator reconciles Data Index automatically; we verify the deployment
-    # is running after the operator upgrade.
-    Then Deployment "sonataflow-platform-data-index-service" pods log contains text 'started in' within 3 minutes
+    # Version-pinned startup string ensures we match the NEW pod only, not the old
+    # pod that coexists during rollout (which logs the from-version startup line).
+    Then Deployment "sonataflow-platform-data-index-service" pods log contains text 'data-index-service-postgresql ${UPGRADE_TO_KOGITO_RUNTIME_VERSION} on JVM (powered by Quarkus ${UPGRADE_TO_QUARKUS_CORE_VERSION}) started in' within 5 minutes
 
     # ── Step 9 — Job Service restarts at new version ──────────────────────────
-    Then Deployment "sonataflow-platform-jobs-service" pods log contains text 'started in' within 3 minutes
+    Then Deployment "sonataflow-platform-jobs-service" pods log contains text 'jobs-service-postgresql ${UPGRADE_TO_KOGITO_RUNTIME_VERSION} on JVM (powered by Quarkus ${UPGRADE_TO_QUARKUS_CORE_VERSION}) started in' within 3 minutes
 
     # ── DB migrator job (operator upgrade step) ───────────────────────────────
     # Verifies that the operator created and completed a sonataflow-db-migrator-job

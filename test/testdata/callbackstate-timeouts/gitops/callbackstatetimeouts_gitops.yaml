@@ -34,7 +34,7 @@ spec:
   podTemplate:
     container:
       # Placeholder replaced by the BDD step before oc apply.
-      image: quay.io/dhanak/callbackstatetimeouts:1.39.0
+      image: quay.io/dhanak/callbackstatetimeouts:${UPGRADE_GITOPS_IMAGE_VERSION}
   flow:
     start: PrintStartMessage
     events:

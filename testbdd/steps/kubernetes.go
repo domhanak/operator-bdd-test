@@ -35,6 +35,9 @@ func registerKubernetesSteps(ctx *godog.ScenarioContext, data *Data) {
 }
 
 func (data *Data) deploymentPodsLogContainsTextWithinMinutes(dName, logText string, timeoutInMin int) error {
+	// Resolve upgrade placeholders so version-pinned startup strings in the feature
+	// file (e.g. ${UPGRADE_TO_KOGITO_RUNTIME_VERSION}) are substituted at runtime.
+	logText = resolveUpgradePlaceholders(logText)
 	// The container name inside a pod is the last hyphen-separated segment of the
 	// deployment name (e.g. "sonataflow-platform-data-index-service" → "data-index-service").
 	// After an operator upgrade, the old pod and the new replacement pod coexist briefly;

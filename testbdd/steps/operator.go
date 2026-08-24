@@ -183,49 +183,49 @@ func (data *Data) configMapContainsStrings(cmName string, table *godog.Table) er
 	return nil
 }
 
-// sonataFlowOperatorIsInstalledViaOLM installs the OSL operator at the version configured
-// via --tests.operator.version using OLM and the custom catalog image. This is the generic
-// install step for non-upgrade scenarios that still need a specific operator version pinned.
-func (data *Data) sonataFlowOperatorIsInstalledViaOLM() error {
-	version := config.GetOperatorVersion()
-	if version == "" {
-		return fmt.Errorf("operator version is not configured: set --tests.operator.version")
-	}
-	return data.installOperatorViaOLM(version)
-}
-
 // sonataFlowOperatorAtFromVersionIsInstalledViaOLM installs the OSL operator at the
-// configured from-version using OLM and the custom catalog image. It creates an
-// OlmClusterWideServiceInstaller on the fly with:
-//   - SubscriptionName: "logic-operator"
-//   - Channel:          the from-version string (e.g. "1.37.2")
-//   - StartingCSV:      "logic-operator.v<fromVersion>"
-//
-// This pins OLM to the exact from-version CSV so the subsequent upgrade step
-// has a clean baseline to upgrade from.
+// configured from-version via OLM using the product catalog (redhat-operators).
+// The from-version is a GA release that always lives in redhat-operators — the custom
+// IIB catalog (operator_catalog_image) carries only the to-version under test.
 func (data *Data) sonataFlowOperatorAtFromVersionIsInstalledViaOLM() error {
 	fromVersion := config.GetUpgradeFromVersion()
 	if fromVersion == "" {
 		return fmt.Errorf("upgrade from-version is not configured: set --tests.upgrade.from_version")
 	}
-	return data.installOperatorViaOLM(fromVersion)
+	return data.installOperatorViaOLMWithCatalog(fromVersion, framework.GetProductCatalog)
 }
 
-// installOperatorViaOLM is the shared implementation for OLM-based operator installs.
-// It deletes any pre-existing subscription and CSVs so OLM starts clean, then installs
-// the operator at the given version using the redhat-operators product catalog.
+// sonataFlowOperatorIsInstalledViaOLM installs the OSL operator at the version configured
+// via --tests.operator.version. Uses the custom IIB catalog when operator_catalog_image is
+// set (e.g. pre-release versions), otherwise falls back to the product catalog.
+func (data *Data) sonataFlowOperatorIsInstalledViaOLM() error {
+	version := config.GetOperatorVersion()
+	if version == "" {
+		return fmt.Errorf("operator version is not configured: set --tests.operator.version")
+	}
+	catalogFn := framework.GetProductCatalog
+	if config.GetOperatorCatalogImage() != "" {
+		catalogFn = framework.GetCustomKogitoOperatorCatalog
+	}
+	return data.installOperatorViaOLMWithCatalog(version, catalogFn)
+}
+
+// installOperatorViaOLMWithCatalog is the shared implementation for OLM-based operator
+// installs. It deletes any pre-existing subscription and CSVs so OLM starts clean, then
+// installs at the given version using the provided catalog function.
 //
 // Do NOT set data.OperatorNamespace here. Callers that need namespace-scoped resource
 // resolution (serviceExists / configMapNamespace) should resolve to data.Namespace, which
 // is set by the subsequent "Namespace is created" step.
-func (data *Data) installOperatorViaOLM(version string) error {
+func (data *Data) installOperatorViaOLMWithCatalog(version string, catalogFn func() framework.OperatorCatalog) error {
 	operatorNS := installers.LogicOperatorNamespace
 	subNS := framework.GetClusterOperatorNamespace()
 	csv := fmt.Sprintf("logic-operator.v%s", version)
+	catalog := catalogFn()
 
 	framework.GetLogger(operatorNS).Info("Installing SonataFlow operator via OLM",
 		"version", version, "csv", csv,
-		"catalog", "redhat-operators", "subscriptionNamespace", subNS)
+		"catalog", catalog.Source(), "subscriptionNamespace", subNS)
 
 	cli := "kubectl"
 	if framework.IsOpenshift() {
@@ -247,13 +247,6 @@ func (data *Data) installOperatorViaOLM(version string) error {
 		return fmt.Errorf("error deleting existing logic-operator CSVs: %w", err)
 	}
 
-	// Use the custom IIB catalog when one is configured (operator_catalog_image is set),
-	// otherwise fall back to the product catalog (redhat-operators).
-	catalogFn := framework.GetProductCatalog
-	if config.GetOperatorCatalogImage() != "" {
-		catalogFn = framework.GetCustomKogitoOperatorCatalog
-	}
-
 	installer := &kogitoInstallers.OlmClusterWideServiceInstaller{
 		SubscriptionName:                    installers.LogicOperatorSubscriptionName,
 		Channel:                             installers.LogicOperatorSubscriptionChannel,
@@ -264,18 +257,48 @@ func (data *Data) installOperatorViaOLM(version string) error {
 		CleanupClusterWideOlmCrsInNamespace: func(_ string) bool { return true },
 	}
 
-	return installer.Install(operatorNS)
+	if err := installer.Install(operatorNS); err != nil {
+		return err
+	}
+	// Wait for the CSV to reach Succeeded phase — a stronger gate than pod
+	// readiness that confirms OLM has fully reconciled all RBAC/webhook resources.
+	return waitForCSVSucceeded(cli, operatorNS, csv, 10)
 }
 
-// resolveUpgradePlaceholders replaces ${UPGRADE_FROM_VERSION} and ${UPGRADE_TO_VERSION}
-// with values from the test configuration flags --tests.upgrade.from_version and
-// --tests.upgrade.to_version respectively.
+// waitForCSVSucceeded polls until the named CSV in namespace reaches the
+// "Succeeded" phase. This is stronger than waiting for the pod to be ready:
+// it confirms OLM has fully reconciled all RBAC, webhooks, and owned resources.
+func waitForCSVSucceeded(cli, namespace, csvName string, timeoutInMin int) error {
+	return framework.WaitForOnOpenshift(namespace, fmt.Sprintf("CSV %s phase=Succeeded", csvName), timeoutInMin,
+		func() (bool, error) {
+			out, err := framework.CreateCommand(cli, "get", "csv", csvName,
+				"-n", namespace,
+				"-o", "jsonpath={.status.phase}",
+			).Execute()
+			if err != nil {
+				return false, nil // CSV may not exist yet
+			}
+			phase := strings.TrimSpace(out)
+			framework.GetLogger(namespace).Info("Waiting for CSV phase", "csv", csvName, "phase", phase)
+			return phase == "Succeeded", nil
+		},
+	)
+}
+
+// resolveUpgradePlaceholders replaces upgrade-related placeholders with runtime
+// values from the test configuration flags.
 func resolveUpgradePlaceholders(s string) string {
 	if strings.Contains(s, "${UPGRADE_FROM_VERSION}") {
 		s = strings.ReplaceAll(s, "${UPGRADE_FROM_VERSION}", config.GetUpgradeFromVersion())
 	}
 	if strings.Contains(s, "${UPGRADE_TO_VERSION}") {
 		s = strings.ReplaceAll(s, "${UPGRADE_TO_VERSION}", config.GetUpgradeToVersion())
+	}
+	if strings.Contains(s, "${UPGRADE_TO_KOGITO_RUNTIME_VERSION}") {
+		s = strings.ReplaceAll(s, "${UPGRADE_TO_KOGITO_RUNTIME_VERSION}", config.GetUpgradeToKogitoRuntimeVersion())
+	}
+	if strings.Contains(s, "${UPGRADE_TO_QUARKUS_CORE_VERSION}") {
+		s = strings.ReplaceAll(s, "${UPGRADE_TO_QUARKUS_CORE_VERSION}", config.GetUpgradeToQuarkusCoreVersion())
 	}
 	return s
 }
@@ -339,7 +362,13 @@ func (data *Data) sonataFlowOperatorIsUpgradedToNextVersion() error {
 	// The to-version operator pod is deployed by OLM into the subscription namespace
 	// (openshift-operators), not into openshift-serverless-logic. The pod label
 	// app.kubernetes.io/name is set to "sonataflow-operator" by the CSV.
-	return framework.WaitForPodsWithLabel(subNS, "app.kubernetes.io/name", "sonataflow-operator", 1, 5)
+	if err := framework.WaitForPodsWithLabel(subNS, "app.kubernetes.io/name", "sonataflow-operator", 1, 5); err != nil {
+		return err
+	}
+	// Wait for the target CSV to reach Succeeded phase before proceeding.
+	// This prevents subsequent DI/JS log checks from racing against a still-rolling
+	// operator that has not yet reconciled the managed deployments.
+	return waitForCSVSucceeded(cli, operatorNS, targetCSV, 5)
 }
 
 // approveInstallPlanForCSV finds an InstallPlan that contains the target CSV and approves it.
